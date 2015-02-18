@@ -1910,7 +1910,6 @@ typedef void (^PBJVisionBlock)();
         _flags.paused = NO;
 
         _timeOffset = kCMTimeInvalid;
-        _startTimestamp = CMClockGetTime(CMClockGetHostTimeClock());
         _flags.interrupted = NO;
         
         PBJMediaWriter *mv = _mediaWriter;
@@ -1941,6 +1940,7 @@ typedef void (^PBJVisionBlock)();
             }];
         };
         [mv finishWritingWithCompletionHandler:finishWritingCompletionHandler];
+        _startTimestamp = CMClockGetTime(CMClockGetHostTimeClock());
         if(!finalize && isRecording){
             // recording should be continued into new, separate file
             [self initializeMediaWriter];
