@@ -301,7 +301,7 @@
         DLog(@"asset writer is in an unknown state, wasn't recording");
         return;
     }
-
+    [_assetWriter endSessionAtSourceTime:_videoTimestamp];
     [_assetWriter finishWritingWithCompletionHandler:handler];
 }
 

@@ -1759,6 +1759,71 @@ typedef void (^PBJVisionBlock)();
     return [self supportsVideoCapture] && [self isCaptureSessionActive] && !_flags.changingModes && isDiskSpaceAvailable;
 }
 
+- (void)initializeMediaWriter
+{
+    NSString *guid = [[NSUUID new] UUIDString];
+    NSString *outputFile = [NSString stringWithFormat:@"video_%@.mp4", guid];
+    
+    if ([_delegate respondsToSelector:@selector(vision:willStartVideoCaptureToFile:)]) {
+        outputFile = [_delegate vision:self willStartVideoCaptureToFile:outputFile];
+        
+        if (!outputFile) {
+            [self _failVideoCaptureWithErrorCode:PBJVisionErrorBadOutputFile];
+            return;
+        }
+    }
+    
+    NSString *outputDirectory = (_captureDirectory == nil ? NSTemporaryDirectory() : _captureDirectory);
+    NSString *outputPath = [outputDirectory stringByAppendingPathComponent:outputFile];
+    NSURL *outputURL = [NSURL fileURLWithPath:outputPath];
+    if ([[NSFileManager defaultManager] fileExistsAtPath:outputPath]) {
+        NSError *error = nil;
+        if (![[NSFileManager defaultManager] removeItemAtPath:outputPath error:&error]) {
+            [self _failVideoCaptureWithErrorCode:PBJVisionErrorOutputFileExists];
+            
+            DLog(@"could not setup an output file (file exists)");
+            return;
+        }
+    }
+    
+    if (!outputPath || [outputPath length] == 0) {
+        [self _failVideoCaptureWithErrorCode:PBJVisionErrorBadOutputFile];
+        
+        DLog(@"could not setup an output file");
+        return;
+    }
+    
+    if (_mediaWriter) {
+        _mediaWriter.delegate = nil;
+        _mediaWriter = nil;
+    }
+    _mediaWriter = [[PBJMediaWriter alloc] initWithOutputURL:outputURL];
+    _mediaWriter.delegate = self;
+    
+    AVCaptureConnection *videoConnection = [_captureOutputVideo connectionWithMediaType:AVMediaTypeVideo];
+    [self _setOrientationForConnection:videoConnection];
+    
+    _startTimestamp = CMClockGetTime(CMClockGetHostTimeClock());
+    _timeOffset = kCMTimeInvalid;
+    
+    _flags.recording = YES;
+    _flags.paused = NO;
+    _flags.interrupted = NO;
+    _flags.videoWritten = NO;
+    
+    _captureThumbnailTimes = [NSMutableSet set];
+    _captureThumbnailFrames = [NSMutableSet set];
+    
+    if (_flags.thumbnailEnabled && _flags.defaultVideoThumbnails) {
+        [self captureVideoThumbnailAtFrame:0];
+    }
+    
+    [self _enqueueBlockOnMainQueue:^{
+        if ([_delegate respondsToSelector:@selector(visionDidStartVideoCapture:)])
+            [_delegate visionDidStartVideoCapture:self];
+    }];
+}
+
 - (void)startVideoCapture
 {
     if (![self _canSessionCaptureWithOutput:_currentOutput]) {
@@ -1774,67 +1839,7 @@ typedef void (^PBJVisionBlock)();
         if (_flags.recording || _flags.paused)
             return;
 	
-        NSString *guid = [[NSUUID new] UUIDString];
-        NSString *outputFile = [NSString stringWithFormat:@"video_%@.mp4", guid];
-        
-        if ([_delegate respondsToSelector:@selector(vision:willStartVideoCaptureToFile:)]) {
-            outputFile = [_delegate vision:self willStartVideoCaptureToFile:outputFile];
-            
-            if (!outputFile) {
-                [self _failVideoCaptureWithErrorCode:PBJVisionErrorBadOutputFile];
-                return;
-            }
-        }
-        
-        NSString *outputDirectory = (_captureDirectory == nil ? NSTemporaryDirectory() : _captureDirectory);
-        NSString *outputPath = [outputDirectory stringByAppendingPathComponent:outputFile];
-        NSURL *outputURL = [NSURL fileURLWithPath:outputPath];
-        if ([[NSFileManager defaultManager] fileExistsAtPath:outputPath]) {
-            NSError *error = nil;
-            if (![[NSFileManager defaultManager] removeItemAtPath:outputPath error:&error]) {
-                [self _failVideoCaptureWithErrorCode:PBJVisionErrorOutputFileExists];
-
-                DLog(@"could not setup an output file (file exists)");
-                return;
-            }
-        }
-
-        if (!outputPath || [outputPath length] == 0) {
-            [self _failVideoCaptureWithErrorCode:PBJVisionErrorBadOutputFile];
-            
-            DLog(@"could not setup an output file");
-            return;
-        }
-        
-        if (_mediaWriter) {
-            _mediaWriter.delegate = nil;
-            _mediaWriter = nil;
-        }
-        _mediaWriter = [[PBJMediaWriter alloc] initWithOutputURL:outputURL];
-        _mediaWriter.delegate = self;
-
-        AVCaptureConnection *videoConnection = [_captureOutputVideo connectionWithMediaType:AVMediaTypeVideo];
-        [self _setOrientationForConnection:videoConnection];
-
-        _startTimestamp = CMClockGetTime(CMClockGetHostTimeClock());
-        _timeOffset = kCMTimeInvalid;
-        
-        _flags.recording = YES;
-        _flags.paused = NO;
-        _flags.interrupted = NO;
-        _flags.videoWritten = NO;
-        
-        _captureThumbnailTimes = [NSMutableSet set];
-        _captureThumbnailFrames = [NSMutableSet set];
-        
-        if (_flags.thumbnailEnabled && _flags.defaultVideoThumbnails) {
-            [self captureVideoThumbnailAtFrame:0];
-        }
-        
-        [self _enqueueBlockOnMainQueue:^{                
-            if ([_delegate respondsToSelector:@selector(visionDidStartVideoCapture:)])
-                [_delegate visionDidStartVideoCapture:self];
-        }];
+        [self initializeMediaWriter];
     }];
 }
 
@@ -1886,7 +1891,11 @@ typedef void (^PBJVisionBlock)();
 - (void)endVideoCapture
 {    
     DLog(@"ending video capture");
-    
+    [self flushVideoCapture:YES];
+}
+
+- (void)flushVideoCapture:(BOOL)finalize
+{
     [self _enqueueBlockOnCaptureVideoQueue:^{
         if (!_flags.recording)
             return;
@@ -1896,43 +1905,46 @@ typedef void (^PBJVisionBlock)();
             return;
         }
         
+        BOOL isRecording = _flags.recording;
         _flags.recording = NO;
         _flags.paused = NO;
-        
-        void (^finishWritingCompletionHandler)(void) = ^{
-            Float64 capturedDuration = self.capturedVideoSeconds;
-            
-            _timeOffset = kCMTimeInvalid;
-            _startTimestamp = CMClockGetTime(CMClockGetHostTimeClock());
-            _flags.interrupted = NO;
 
+        _timeOffset = kCMTimeInvalid;
+        _startTimestamp = CMClockGetTime(CMClockGetHostTimeClock());
+        _flags.interrupted = NO;
+        
+        PBJMediaWriter *mv = _mediaWriter;
+        Float64 capturedDuration = self.capturedVideoSeconds;
+        NSURL* captureURL = mv.outputURL;
+        NSString *capturePath = [captureURL path];
+        NSError *captureError = [mv error];
+        void (^finishWritingCompletionHandler)(void) = ^{
             [self _enqueueBlockOnMainQueue:^{
                 if ([_delegate respondsToSelector:@selector(visionDidEndVideoCapture:)])
                     [_delegate visionDidEndVideoCapture:self];
 
                 NSMutableDictionary *videoDict = [[NSMutableDictionary alloc] init];
-                NSString *path = [_mediaWriter.outputURL path];
-                if (path) {
-                    videoDict[PBJVisionVideoPathKey] = path;
+                if (capturePath) {
+                    videoDict[PBJVisionVideoPathKey] = capturePath;
                     
                     if (_flags.thumbnailEnabled) {
                         if (_flags.defaultVideoThumbnails) {
                             [self captureVideoThumbnailAtTime:capturedDuration];
                         }
-                        
-                        [self _generateThumbnailsForVideoWithURL:_mediaWriter.outputURL inDictionary:videoDict];
+                        [self _generateThumbnailsForVideoWithURL:captureURL inDictionary:videoDict];
                     }
                 }
-
                 videoDict[PBJVisionVideoCapturedDurationKey] = @(capturedDuration);
-
-                NSError *error = [_mediaWriter error];
                 if ([_delegate respondsToSelector:@selector(vision:capturedVideo:error:)]) {
-                    [_delegate vision:self capturedVideo:videoDict error:error];
+                    [_delegate vision:self capturedVideo:videoDict error:captureError];
                 }
             }];
         };
-        [_mediaWriter finishWritingWithCompletionHandler:finishWritingCompletionHandler];
+        [mv finishWritingWithCompletionHandler:finishWritingCompletionHandler];
+        if(!finalize && isRecording){
+            // recording should be continued into new, separate file
+            [self initializeMediaWriter];
+        }
     }];
 }
 
