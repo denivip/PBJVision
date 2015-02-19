@@ -1797,7 +1797,7 @@ typedef void (^PBJVisionBlock)();
         _mediaWriter.delegate = nil;
         _mediaWriter = nil;
     }
-    _mediaWriter = [[PBJMediaWriter alloc] initWithOutputURL:outputURL];
+    _mediaWriter = [[PBJMediaWriter alloc] initWithOutputURL:outputURL format:self.captureContainerFormat];
     _mediaWriter.delegate = self;
     
     AVCaptureConnection *videoConnection = [_captureOutputVideo connectionWithMediaType:AVMediaTypeVideo];

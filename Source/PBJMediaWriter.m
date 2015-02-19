@@ -86,12 +86,15 @@
 
 #pragma mark - init
 
-- (id)initWithOutputURL:(NSURL *)outputURL
+- (id)initWithOutputURL:(NSURL *)outputURL format:(NSString*)format
 {
     self = [super init];
     if (self) {
         NSError *error = nil;
-        _assetWriter = [AVAssetWriter assetWriterWithURL:outputURL fileType:(NSString *)kUTTypeMPEG4 error:&error];
+        if(format == nil){
+            format = (NSString *)kUTTypeMPEG4;
+        }
+        _assetWriter = [AVAssetWriter assetWriterWithURL:outputURL fileType:format error:&error];
         if (error) {
             DLog(@"error setting up the asset writer (%@)", error);
             _assetWriter = nil;

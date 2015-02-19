@@ -29,7 +29,7 @@
 @protocol PBJMediaWriterDelegate;
 @interface PBJMediaWriter : NSObject
 
-- (id)initWithOutputURL:(NSURL *)outputURL;
+- (id)initWithOutputURL:(NSURL *)outputURL format:(NSString*)format;
 
 @property (nonatomic, weak) id<PBJMediaWriterDelegate> delegate;
 
