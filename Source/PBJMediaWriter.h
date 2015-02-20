@@ -51,7 +51,7 @@
 
 - (void)writeSampleBuffer:(CMSampleBufferRef)sampleBuffer withMediaTypeVideo:(BOOL)video;
 - (void)finishWritingWithCompletionHandler:(void (^)(void))handler;
-
+- (void)finalizeWriting;
 @end
 
 @protocol PBJMediaWriterDelegate <NSObject>

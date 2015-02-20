@@ -927,10 +927,12 @@ typedef void (^PBJVisionBlock)();
     _captureDeviceBack = nil;
 
     _captureSession = nil;
-    _currentDevice = nil;
     _currentInput = nil;
     _currentOutput = nil;
     
+    [self willChangeValueForKey:@"currentDevice"];
+    _currentDevice = nil;
+    [self didChangeValueForKey:@"currentDevice"];
     DLog(@"camera destroyed");
 }
 
@@ -1908,7 +1910,7 @@ typedef void (^PBJVisionBlock)();
         BOOL isRecording = _flags.recording;
         _flags.recording = NO;
         _flags.paused = NO;
-
+        
         _timeOffset = kCMTimeInvalid;
         _flags.interrupted = NO;
         
@@ -1921,7 +1923,7 @@ typedef void (^PBJVisionBlock)();
             [self _enqueueBlockOnMainQueue:^{
                 if ([_delegate respondsToSelector:@selector(visionDidEndVideoCapture:)])
                     [_delegate visionDidEndVideoCapture:self];
-
+                
                 NSMutableDictionary *videoDict = [[NSMutableDictionary alloc] init];
                 if (capturePath) {
                     videoDict[PBJVisionVideoPathKey] = capturePath;
@@ -1939,6 +1941,7 @@ typedef void (^PBJVisionBlock)();
                 }
             }];
         };
+        [mv finalizeWriting];
         [mv finishWritingWithCompletionHandler:finishWritingCompletionHandler];
         _startTimestamp = CMClockGetTime(CMClockGetHostTimeClock());
         if(!finalize && isRecording){
@@ -2167,20 +2170,23 @@ typedef void (^PBJVisionBlock)();
 
 - (void)captureOutput:(AVCaptureOutput *)captureOutput didOutputSampleBuffer:(CMSampleBufferRef)sampleBuffer fromConnection:(AVCaptureConnection *)connection
 {
+    //DLog("%@: received new buffer, %p", _mediaWriter, sampleBuffer);
 	CFRetain(sampleBuffer);
     
     if (!CMSampleBufferDataIsReady(sampleBuffer)) {
-        DLog(@"sample buffer data is not ready");
+        //DLog("%@: skipping buffer, sample data not ready, %p", _mediaWriter, sampleBuffer);
         CFRelease(sampleBuffer);
         return;
     }
 
     if (!_flags.recording || _flags.paused) {
+        //DLog("%@: skipping buffer, not recording, %p", _mediaWriter, sampleBuffer);
         CFRelease(sampleBuffer);
         return;
     }
 
     if (!_mediaWriter) {
+        //DLog("%@: skipping buffer, no writer, %p", _mediaWriter, sampleBuffer);
         CFRelease(sampleBuffer);
         return;
     }
@@ -2195,18 +2201,12 @@ typedef void (^PBJVisionBlock)();
         [self _setupMediaWriterVideoInputWithSampleBuffer:sampleBuffer];
         DLog(@"ready for video (%d)", _mediaWriter.isVideoReady);
     }
-
-    BOOL isReadyToRecord = ((!_flags.audioCaptureEnabled || _mediaWriter.isAudioReady) && _mediaWriter.isVideoReady);
-    if (!isReadyToRecord) {
-        CFRelease(sampleBuffer);
-        return;
-    }
     
     CMTime currentTimestamp = CMSampleBufferGetPresentationTimeStamp(sampleBuffer);
-
     // calculate the length of the interruption and store the offsets
     if (_flags.interrupted) {
         if (isVideo) {
+            //DLog("%@: skipping buffer, video interrupted, %p", _mediaWriter, sampleBuffer);
             CFRelease(sampleBuffer);
             return;
         }
@@ -2237,11 +2237,20 @@ typedef void (^PBJVisionBlock)();
         CFRetain(bufferToWrite);
     }
     
+    BOOL isReadyToRecord = ((!_flags.audioCaptureEnabled || _mediaWriter.isAudioReady) && _mediaWriter.isVideoReady);
+    if (!isReadyToRecord) {
+        //DLog("%@: skipping buffer, not ready to record, %p", _mediaWriter, sampleBuffer);
+        // we have to "stack" buffers for later saving, or frames will be lost
+        // critical for live video tracking
+        CFRelease(sampleBuffer);
+        return;
+    }
+    
     // write the sample buffer
     if (bufferToWrite && !_flags.interrupted) {
     
         if (isVideo) {
-
+            //DLog("%@: trying to write video buffer, %p", _mediaWriter, sampleBuffer);
             [_mediaWriter writeSampleBuffer:bufferToWrite withMediaTypeVideo:isVideo];
 
             _flags.videoWritten = YES;
@@ -2269,7 +2278,7 @@ typedef void (^PBJVisionBlock)();
             }];
         
         } else if (!isVideo && _flags.videoWritten) {
-            
+            //DLog("%@: trying to write audio buffer, %p", _mediaWriter, sampleBuffer);
             [_mediaWriter writeSampleBuffer:bufferToWrite withMediaTypeVideo:isVideo];
             
             CFRetain(bufferToWrite);
@@ -2279,13 +2288,19 @@ typedef void (^PBJVisionBlock)();
                 }
                 CFRelease(bufferToWrite);
             }];
-        
         }
     
     }
+    //else{
+    //    DLog("%@: skipping buffer, nothing to write, %p", _mediaWriter, sampleBuffer);
+    //}
     
     [self _automaticallyEndCaptureIfMaximumDurationReachedWithSampleBuffer:sampleBuffer];
-        
+    
+    if ([_delegate respondsToSelector:@selector(vision:didCaptureSampleHandled:)]) {
+        [_delegate vision:self didCaptureSampleHandled:sampleBuffer];
+    }
+    
     if (bufferToWrite) {
         CFRelease(bufferToWrite);
     }
