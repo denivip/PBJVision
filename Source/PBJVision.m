@@ -179,7 +179,7 @@ typedef NS_ENUM(GLint, PBJVisionUniformLocationTypes)
 }
 
 @property (nonatomic) AVCaptureDevice *currentDevice;
-
+@property (strong, nonatomic) NSMutableArray* skippedBuffers;
 @end
 
 @implementation PBJVision
@@ -720,6 +720,7 @@ typedef NS_ENUM(GLint, PBJVisionUniformLocationTypes)
         _previewLayer = [[AVCaptureVideoPreviewLayer alloc] initWithSession:nil];
         
         _maximumCaptureDuration = kCMTimeInvalid;
+        _skippedBuffers = @[].mutableCopy;
 
         [self setMirroringMode:PBJMirroringAuto];
 
@@ -1941,7 +1942,6 @@ typedef void (^PBJVisionBlock)();
                 }
             }];
         };
-        [mv finalizeWriting];
         [mv finishWritingWithCompletionHandler:finishWritingCompletionHandler];
         _startTimestamp = CMClockGetTime(CMClockGetHostTimeClock());
         if(!finalize && isRecording){
@@ -2242,54 +2242,27 @@ typedef void (^PBJVisionBlock)();
         //DLog("%@: skipping buffer, not ready to record, %p", _mediaWriter, sampleBuffer);
         // we have to "stack" buffers for later saving, or frames will be lost
         // critical for live video tracking
+        if([self.skippedBuffers count] < 100){
+            [self.skippedBuffers addObject:@[@(isVideo),[NSValue valueWithPointer:bufferToWrite]]];
+        }
+        // not releasing bufferToWrite here
         CFRelease(sampleBuffer);
         return;
     }
     
     // write the sample buffer
     if (bufferToWrite && !_flags.interrupted) {
-    
-        if (isVideo) {
-            //DLog("%@: trying to write video buffer, %p", _mediaWriter, sampleBuffer);
-            [_mediaWriter writeSampleBuffer:bufferToWrite withMediaTypeVideo:isVideo];
-
-            _flags.videoWritten = YES;
-        
-            // process the sample buffer for rendering onion layer or capturing video photo
-            if ( (_flags.videoRenderingEnabled || _flags.videoCaptureFrame) && _flags.videoWritten) {
-                [self _executeBlockOnMainQueue:^{
-                    [self _processSampleBuffer:bufferToWrite];
-                    
-                    if (_flags.videoCaptureFrame) {
-                        _flags.videoCaptureFrame = NO;
-                        [self _willCapturePhoto];
-                        [self _capturePhotoFromSampleBuffer:bufferToWrite];
-                        [self _didCapturePhoto];
-                    }
-                }];
+        if([self.skippedBuffers count] > 0){
+            // sending saved buffers to writed
+            for(NSArray* bufpair in self.skippedBuffers){
+                BOOL pp_isVideo = [[bufpair objectAtIndex:0] boolValue];
+                CMSampleBufferRef pp_bufferToWrite = (CMSampleBufferRef)[[bufpair objectAtIndex:1] pointerValue];
+                [self passBufferToWriter:pp_bufferToWrite isVideo:pp_isVideo];
+                CFRelease(pp_bufferToWrite);
             }
-            
-            CFRetain(bufferToWrite);
-            [self _enqueueBlockOnMainQueue:^{
-                if ([_delegate respondsToSelector:@selector(vision:didCaptureVideoSampleBuffer:)]) {
-                    [_delegate vision:self didCaptureVideoSampleBuffer:bufferToWrite];
-                }
-                CFRelease(bufferToWrite);
-            }];
-        
-        } else if (!isVideo && _flags.videoWritten) {
-            //DLog("%@: trying to write audio buffer, %p", _mediaWriter, sampleBuffer);
-            [_mediaWriter writeSampleBuffer:bufferToWrite withMediaTypeVideo:isVideo];
-            
-            CFRetain(bufferToWrite);
-            [self _enqueueBlockOnMainQueue:^{
-                if ([_delegate respondsToSelector:@selector(vision:didCaptureAudioSample:)]) {
-                    [_delegate vision:self didCaptureAudioSample:bufferToWrite];
-                }
-                CFRelease(bufferToWrite);
-            }];
+            [self.skippedBuffers removeAllObjects];
         }
-    
+        [self passBufferToWriter:bufferToWrite isVideo:isVideo];
     }
     //else{
     //    DLog("%@: skipping buffer, nothing to write, %p", _mediaWriter, sampleBuffer);
@@ -2306,11 +2279,53 @@ typedef void (^PBJVisionBlock)();
     }
     
     CFRelease(sampleBuffer);
+}
 
+- (void)passBufferToWriter:(CMSampleBufferRef)bufferToWrite isVideo:(BOOL)isVideo
+{
+    if (isVideo) {
+        //DLog("%@: trying to write video buffer, %p", _mediaWriter, sampleBuffer);
+        [_mediaWriter writeSampleBuffer:bufferToWrite withMediaTypeVideo:isVideo];
+        
+        _flags.videoWritten = YES;
+        
+        // process the sample buffer for rendering onion layer or capturing video photo
+        if ( (_flags.videoRenderingEnabled || _flags.videoCaptureFrame) && _flags.videoWritten) {
+            [self _executeBlockOnMainQueue:^{
+                [self _processSampleBuffer:bufferToWrite];
+                
+                if (_flags.videoCaptureFrame) {
+                    _flags.videoCaptureFrame = NO;
+                    [self _willCapturePhoto];
+                    [self _capturePhotoFromSampleBuffer:bufferToWrite];
+                    [self _didCapturePhoto];
+                }
+            }];
+        }
+        
+        CFRetain(bufferToWrite);
+        [self _enqueueBlockOnMainQueue:^{
+            if ([_delegate respondsToSelector:@selector(vision:didCaptureVideoSampleBuffer:)]) {
+                [_delegate vision:self didCaptureVideoSampleBuffer:bufferToWrite];
+            }
+            CFRelease(bufferToWrite);
+        }];
+        
+    } else if (!isVideo && _flags.videoWritten) {
+        //DLog("%@: trying to write audio buffer, %p", _mediaWriter, sampleBuffer);
+        [_mediaWriter writeSampleBuffer:bufferToWrite withMediaTypeVideo:isVideo];
+        
+        CFRetain(bufferToWrite);
+        [self _enqueueBlockOnMainQueue:^{
+            if ([_delegate respondsToSelector:@selector(vision:didCaptureAudioSample:)]) {
+                [_delegate vision:self didCaptureAudioSample:bufferToWrite];
+            }
+            CFRelease(bufferToWrite);
+        }];
+    }
 }
 
 #pragma mark - App NSNotifications
-
 - (void)_applicationWillEnterForeground:(NSNotification *)notification
 {
     DLog(@"applicationWillEnterForeground");

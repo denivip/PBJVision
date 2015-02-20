@@ -310,7 +310,19 @@
 
 - (void)finalizeWriting
 {
+    if(CMTIME_IS_INVALID(_videoTimestamp)){
+        return;
+    }
     [_assetWriter endSessionAtSourceTime:_videoTimestamp];
+    return;
+}
+
+- (BOOL)canBeFinalized
+{
+    if(CMTIME_IS_INVALID(_videoTimestamp)){
+        return NO;
+    }
+    return YES;
 }
 
 - (void)finishWritingWithCompletionHandler:(void (^)(void))handler
@@ -320,6 +332,11 @@
         DLog(@"asset writer is in an unknown state, wasn't recording");
         return;
     }
+    if(![self canBeFinalized]){
+        // Nothing to save
+        return;
+    }
+    [self finalizeWriting];
     [_assetWriter finishWritingWithCompletionHandler:handler];
 }
 
