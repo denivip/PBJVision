@@ -130,8 +130,7 @@
             }
             
         }
-        
-        DLog(@"prepared to write to (%@)", outputURL);
+        //DLog(@"%@: prepared to write to (%@)", self, outputURL);
     }
     return self;
 }
@@ -175,7 +174,7 @@
 		if (_assetWriterAudioInput && [_assetWriter canAddInput:_assetWriterAudioInput]) {
 			[_assetWriter addInput:_assetWriterAudioInput];
 		
-            DLog(@"setup audio input with settings sampleRate (%f) channels (%lu) bitRate (%ld)",
+            DLog(@"%@: setup audio input with settings sampleRate (%f) channels (%lu) bitRate (%ld)", self,
                 [[audioSettings objectForKey:AVSampleRateKey] floatValue],
                 (unsigned long)[[audioSettings objectForKey:AVNumberOfChannelsKey] unsignedIntegerValue],
                 (long)[[audioSettings objectForKey:AVEncoderBitRateKey] integerValue]);
@@ -208,7 +207,7 @@
 #if !defined(NDEBUG) && LOG_WRITER
             NSDictionary *videoCompressionProperties = videoSettings[AVVideoCompressionPropertiesKey];
             if (videoCompressionProperties) {
-                DLog(@"setup video with compression settings bps (%f) frameInterval (%ld)",
+                DLog(@"%@: setup video with compression settings bps (%f) frameInterval (%ld)", self,
                         [videoCompressionProperties[AVVideoAverageBitRateKey] floatValue],
                         (long)[videoCompressionProperties[AVVideoMaxKeyFrameIntervalKey] integerValue]);
             } else {
@@ -235,7 +234,7 @@
 - (void)writeSampleBuffer:(CMSampleBufferRef)sampleBuffer withMediaTypeVideo:(BOOL)video
 {
     if (!CMSampleBufferDataIsReady(sampleBuffer)) {
-        //DLog("%@: skipping buffer, samples not ready", self);
+        DLog("%@: skipping buffer, samples not ready", self);
         return;
     }
 
@@ -245,9 +244,9 @@
         if ([_assetWriter startWriting]) {
             CMTime timestamp = CMSampleBufferGetPresentationTimeStamp(sampleBuffer);
 			[self initializeWriting:timestamp];
-            //DLog(@"started writing with status (%ld)", (long)_assetWriter.status);
+            DLog(@"%@: started writing with status (%ld)", self, (long)_assetWriter.status);
 		} else {
-			DLog(@"error when starting to write (%@)", [_assetWriter error]);
+			DLog(@"%@: error when starting to write (%@)", self, [_assetWriter error]);
             return;
 		}
         
@@ -280,16 +279,16 @@
         
 		if (video) {
 			if (_assetWriterVideoInput.readyForMoreMediaData) {
-                //DLog("%@: saving buffer", self);
 				if ([_assetWriterVideoInput appendSampleBuffer:sampleBuffer]) {
+                    //DLog("%@: appendSampleBuffer ok", self);
                     _videoTimestamp = timestamp;
 				} else {
 					DLog(@"writer error appending video (%@)", [_assetWriter error]);
                 }
             }
-            //else{
-            //    DLog("%@: skipping buffer", self);
-            //}
+            else{
+                DLog("%@: skipping buffer", self);
+            }
 		} else {
 			if (_assetWriterAudioInput.readyForMoreMediaData) {
 				if ([_assetWriterAudioInput appendSampleBuffer:sampleBuffer]) {
@@ -327,13 +326,14 @@
 
 - (void)finishWritingWithCompletionHandler:(void (^)(void))handler
 {
-    //DLog("%@: finalizing", self);
+    DLog("%@: finalizing", self);
     if (_assetWriter.status == AVAssetWriterStatusUnknown) {
-        DLog(@"asset writer is in an unknown state, wasn't recording");
+        DLog(@"%@: asset writer is in an unknown state, wasn't recording", self);
         return;
     }
     if(![self canBeFinalized]){
         // Nothing to save
+        DLog(@"%@: asset writer recorded nothing", self);
         return;
     }
     [self finalizeWriting];

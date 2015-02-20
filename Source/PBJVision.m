@@ -175,6 +175,7 @@ typedef NS_ENUM(GLint, PBJVisionUniformLocationTypes)
         unsigned int thumbnailEnabled:1;
         unsigned int defaultVideoThumbnails:1;
         unsigned int videoCaptureFrame:1;
+        unsigned int isWaitingForWriter:1;
     } __block _flags;
 }
 
@@ -716,7 +717,6 @@ typedef NS_ENUM(GLint, PBJVisionUniformLocationTypes)
         // setup queues
         _captureSessionDispatchQueue = dispatch_queue_create("PBJVisionSession", DISPATCH_QUEUE_SERIAL); // protects session
         _captureCaptureDispatchQueue = dispatch_queue_create("PBJVisionCapture", DISPATCH_QUEUE_SERIAL); // protects capture
-        
         _previewLayer = [[AVCaptureVideoPreviewLayer alloc] initWithSession:nil];
         
         _maximumCaptureDuration = kCMTimeInvalid;
@@ -1900,11 +1900,12 @@ typedef void (^PBJVisionBlock)();
 - (void)flushVideoCapture:(BOOL)finalize
 {
     [self _enqueueBlockOnCaptureVideoQueue:^{
-        if (!_flags.recording)
+        if (!_flags.recording){
+            DLog(@"not recording");
             return;
-        
+        }
         if (!_mediaWriter) {
-            DLog(@"media writer unavailable to end");
+            DLog(@"media writer unavailable");
             return;
         }
         
@@ -1921,11 +1922,12 @@ typedef void (^PBJVisionBlock)();
         NSString *capturePath = [captureURL path];
         NSError *captureError = [mv error];
         void (^finishWritingCompletionHandler)(void) = ^{
+            NSMutableDictionary *videoDict = [[NSMutableDictionary alloc] init];
+            videoDict[PBJVisionVideoCapturedDurationKey] = @(capturedDuration);
             [self _enqueueBlockOnMainQueue:^{
                 if ([_delegate respondsToSelector:@selector(visionDidEndVideoCapture:)])
                     [_delegate visionDidEndVideoCapture:self];
                 
-                NSMutableDictionary *videoDict = [[NSMutableDictionary alloc] init];
                 if (capturePath) {
                     videoDict[PBJVisionVideoPathKey] = capturePath;
                     
@@ -1936,7 +1938,6 @@ typedef void (^PBJVisionBlock)();
                         [self _generateThumbnailsForVideoWithURL:captureURL inDictionary:videoDict];
                     }
                 }
-                videoDict[PBJVisionVideoCapturedDurationKey] = @(capturedDuration);
                 if ([_delegate respondsToSelector:@selector(vision:capturedVideo:error:)]) {
                     [_delegate vision:self capturedVideo:videoDict error:captureError];
                 }
@@ -1946,7 +1947,15 @@ typedef void (^PBJVisionBlock)();
         _startTimestamp = CMClockGetTime(CMClockGetHostTimeClock());
         if(!finalize && isRecording){
             // recording should be continued into new, separate file
-            [self initializeMediaWriter];
+            _flags.isWaitingForWriter = YES;
+            // we HAVE to do this, or finishWritingCompletionHandler will never be called!
+            // writes seems to be easily overloaded with data -> finishWritingCompletionHandler really skipped
+            // all samples during reinitialization are saved for later write
+            dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.1 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+                _flags.isWaitingForWriter = NO;
+                [self initializeMediaWriter];
+            });
+            
         }
     }];
 }
@@ -2179,6 +2188,12 @@ typedef void (^PBJVisionBlock)();
         return;
     }
 
+    BOOL isVideo = (captureOutput == _captureOutputVideo);
+    if (_flags.isWaitingForWriter){
+        [self saveBufferForWriter:sampleBuffer isVideo:isVideo];
+        // CFRelease(sampleBuffer);// not releasing
+        return;
+    }
     if (!_flags.recording || _flags.paused) {
         //DLog("%@: skipping buffer, not recording, %p", _mediaWriter, sampleBuffer);
         CFRelease(sampleBuffer);
@@ -2192,7 +2207,6 @@ typedef void (^PBJVisionBlock)();
     }
     
     // setup media writer
-    BOOL isVideo = (captureOutput == _captureOutputVideo);
     if (!isVideo && !_mediaWriter.isAudioReady) {
         [self _setupMediaWriterAudioInputWithSampleBuffer:sampleBuffer];
         DLog(@"ready for audio (%d)", _mediaWriter.isAudioReady);
@@ -2200,6 +2214,13 @@ typedef void (^PBJVisionBlock)();
     if (isVideo && !_mediaWriter.isVideoReady) {
         [self _setupMediaWriterVideoInputWithSampleBuffer:sampleBuffer];
         DLog(@"ready for video (%d)", _mediaWriter.isVideoReady);
+    }
+    
+    BOOL isReadyToRecord = ((!_flags.audioCaptureEnabled || _mediaWriter.isAudioReady) && _mediaWriter.isVideoReady);
+    if (_mediaWriter && !isReadyToRecord){
+        [self saveBufferForWriter:sampleBuffer isVideo:isVideo];
+        // CFRelease(sampleBuffer);// not releasing
+        return;
     }
     
     CMTime currentTimestamp = CMSampleBufferGetPresentationTimeStamp(sampleBuffer);
@@ -2237,18 +2258,15 @@ typedef void (^PBJVisionBlock)();
         CFRetain(bufferToWrite);
     }
     
-    BOOL isReadyToRecord = ((!_flags.audioCaptureEnabled || _mediaWriter.isAudioReady) && _mediaWriter.isVideoReady);
-    if (!isReadyToRecord) {
+    //if (!isReadyToRecord) {
         //DLog("%@: skipping buffer, not ready to record, %p", _mediaWriter, sampleBuffer);
         // we have to "stack" buffers for later saving, or frames will be lost
         // critical for live video tracking
-        if([self.skippedBuffers count] < 100){
-            [self.skippedBuffers addObject:@[@(isVideo),[NSValue valueWithPointer:bufferToWrite]]];
-        }
+        //[self saveBufferForWriter:bufferToWrite isVideo:isVideo];
         // not releasing bufferToWrite here
-        CFRelease(sampleBuffer);
-        return;
-    }
+        //CFRelease(sampleBuffer);
+        //return;
+    //}
     
     // write the sample buffer
     if (bufferToWrite && !_flags.interrupted) {
@@ -2279,6 +2297,13 @@ typedef void (^PBJVisionBlock)();
     }
     
     CFRelease(sampleBuffer);
+}
+
+- (void)saveBufferForWriter:(CMSampleBufferRef)bufferToWrite isVideo:(BOOL)isVideo
+{
+    if([self.skippedBuffers count] < 100){
+        [self.skippedBuffers addObject:@[@(isVideo),[NSValue valueWithPointer:bufferToWrite]]];
+    }
 }
 
 - (void)passBufferToWriter:(CMSampleBufferRef)bufferToWrite isVideo:(BOOL)isVideo
