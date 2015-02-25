@@ -1250,14 +1250,18 @@ typedef void (^PBJVisionBlock)();
 
 - (void)freezePreview
 {
-    if (_previewLayer)
-        _previewLayer.connection.enabled = NO;
+    [self _enqueueBlockOnCaptureSessionQueue:^{
+        if (_previewLayer)
+            _previewLayer.connection.enabled = NO;
+    }];
 }
 
 - (void)unfreezePreview
 {
-    if (_previewLayer)
-        _previewLayer.connection.enabled = YES;
+    [self _enqueueBlockOnCaptureSessionQueue:^{
+        if (_previewLayer)
+            _previewLayer.connection.enabled = YES;
+    }];
 }
 
 #pragma mark - focus, exposure, white balance
