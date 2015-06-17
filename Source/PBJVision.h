@@ -195,6 +195,10 @@ static CGFloat const PBJVideoBitRate1280x750 = 5000000 * 8;
 @property (nonatomic, readonly, getter=isExposureLockSupported) BOOL exposureLockSupported;
 - (void)exposeAtAdjustedPointOfInterest:(CGPoint)adjustedPoint;
 
+// zoom
+- (BOOL)isZoomingSupported;
+- (void)setZoomFactor:(float)zoom;
+
 // photo
 
 @property (nonatomic, readonly) BOOL canCapturePhoto;

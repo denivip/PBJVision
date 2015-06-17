@@ -133,6 +133,7 @@ typedef NS_ENUM(GLint, PBJVisionUniformLocationTypes)
     NSInteger _audioBitRate;
     NSInteger _videoFrameRate;
     NSDictionary *_additionalCompressionProperties;
+    CGFloat _maxZoomFactor;
     
     AVCaptureDevice *_currentDevice;
     AVCaptureDeviceInput *_currentInput;
@@ -478,6 +479,38 @@ typedef NS_ENUM(GLint, PBJVisionUniformLocationTypes)
     }
 }
 
+- (void)setZoomFactor:(float)zoom
+{
+    if(![self isZoomingSupported]){
+        return;
+    }
+    NSError *error = nil;
+    if (_currentDevice && [_currentDevice lockForConfiguration:&error]) {
+        if(zoom < 1.0){
+            zoom = 1.0;
+        }
+        if(zoom > _maxZoomFactor){
+            zoom = _maxZoomFactor;
+        }
+        _currentDevice.videoZoomFactor = zoom;
+        [_currentDevice unlockForConfiguration];
+    } else if (error) {
+        DLog(@"error locking device for zoom change (%@)", error);
+    }
+}
+
+- (BOOL)isZoomingSupported
+{
+    if(_maxZoomFactor < 0.0){
+        _maxZoomFactor = _currentDevice.activeFormat.videoMaxZoomFactor;
+    }
+    if(_maxZoomFactor <= 1.0001){
+        return NO;
+    }
+    return YES;
+}
+
+
 - (BOOL)isExposureLockSupported
 {
     return [_currentDevice isExposureModeSupported:AVCaptureExposureModeLocked];
@@ -708,6 +741,7 @@ typedef NS_ENUM(GLint, PBJVisionUniformLocationTypes)
 
         // default audio/video configuration
         _audioBitRate = 64000;
+        _maxZoomFactor = -1.0;
         
         // default flags
         _flags.thumbnailEnabled = YES;
