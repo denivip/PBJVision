@@ -46,7 +46,8 @@
     
     CMTime _audioTimestamp;
     CMTime _videoTimestamp;
-    BOOL isMuted;
+    BOOL isAudioMuted;
+    BOOL isVideoMuted;
 }
 
 @end
@@ -230,15 +231,27 @@
     return self.isVideoReady;
 }
 
-- (void) muteAudioInBuffer:(CMSampleBufferRef)sampleBuffer
+- (void) muteAudioVideoInBuffer:(CMSampleBufferRef)sampleBuffer
 {
+    CVImageBufferRef imageBuffer = CMSampleBufferGetImageBuffer(sampleBuffer);
+    if (CVPixelBufferLockBaseAddress(imageBuffer, 0) == kCVReturnSuccess){
+        void *baseAddress = CVPixelBufferGetBaseAddress(imageBuffer);
+        // Get the number of bytes per row for the pixel buffer
+        size_t bytesPerRow = CVPixelBufferGetBytesPerRow(imageBuffer);
+        // Get the pixel buffer width and height
+        //size_t width = CVPixelBufferGetWidth(imageBuffer);
+        size_t height = CVPixelBufferGetHeight(imageBuffer);
+        memset(baseAddress,0,bytesPerRow*height);
+        CVPixelBufferUnlockBaseAddress(imageBuffer, 0);
+        return;
+    }
     CMItemCount numSamples = CMSampleBufferGetNumSamples(sampleBuffer);
     if(numSamples == 0){
         return;
     }
     NSUInteger channelIndex = 0;
     CMBlockBufferRef audioBlockBuffer = CMSampleBufferGetDataBuffer(sampleBuffer);
-    size_t sampleSize = CMSampleBufferGetSampleSize (sampleBuffer, 0);//sizeof(SInt16)
+    size_t sampleSize = CMSampleBufferGetSampleSize(sampleBuffer, 0);//sizeof(SInt16)
     size_t audioBlockBufferOffset = (channelIndex * numSamples * sampleSize);
     size_t lengthAtOffset = 0;
     size_t totalLength = 0;
@@ -251,8 +264,12 @@
     
 }
 
+- (void)muteVideo:(BOOL)muteOrNot {
+    isVideoMuted = muteOrNot;
+}
+
 - (void)muteAudio:(BOOL)muteOrNot {
-    isMuted = muteOrNot;
+    isAudioMuted = muteOrNot;
 }
 
 #pragma mark - sample buffer writing
@@ -304,6 +321,9 @@
         }
         
 		if (video) {
+            if(isVideoMuted){
+                [self muteAudioVideoInBuffer:sampleBuffer];
+            }
 			if (_assetWriterVideoInput.readyForMoreMediaData) {
 				if ([_assetWriterVideoInput appendSampleBuffer:sampleBuffer]) {
                     //DLog("%@: appendSampleBuffer ok", self);
@@ -316,8 +336,8 @@
                 DLog("%@: skipping buffer", self);
             }
 		} else {
-            if(isMuted){
-                [self muteAudioInBuffer:sampleBuffer];
+            if(isAudioMuted){
+                [self muteAudioVideoInBuffer:sampleBuffer];
             }
 			if (_assetWriterAudioInput.readyForMoreMediaData) {
 				if ([_assetWriterAudioInput appendSampleBuffer:sampleBuffer]) {

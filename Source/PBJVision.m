@@ -177,6 +177,8 @@ typedef NS_ENUM(GLint, PBJVisionUniformLocationTypes)
         unsigned int defaultVideoThumbnails:1;
         unsigned int videoCaptureFrame:1;
         unsigned int isWaitingForWriter:1;
+        unsigned int isAudioMuted:1;
+        unsigned int isVideoMuted:1;
     } __block _flags;
 }
 
@@ -1468,8 +1470,16 @@ typedef void (^PBJVisionBlock)();
 }
 
 - (void)muteAudio:(BOOL)mute {
+    _flags.isAudioMuted = mute?1:0;
     if(_mediaWriter){
         [_mediaWriter muteAudio:mute];
+    }
+}
+
+- (void)muteVideo:(BOOL)mute {
+    _flags.isVideoMuted = mute?1:0;
+    if(_mediaWriter){
+        [_mediaWriter muteVideo:mute];
     }
 }
 
@@ -1851,7 +1861,12 @@ typedef void (^PBJVisionBlock)();
     }
     _mediaWriter = [[PBJMediaWriter alloc] initWithOutputURL:outputURL format:self.captureContainerFormat];
     _mediaWriter.delegate = self;
-    
+    if(_flags.isAudioMuted > 0){
+        [_mediaWriter muteAudio:YES];
+    }
+    if(_flags.isVideoMuted > 0){
+        [_mediaWriter muteVideo:YES];
+    }
     AVCaptureConnection *videoConnection = [_captureOutputVideo connectionWithMediaType:AVMediaTypeVideo];
     [self _setOrientationForConnection:videoConnection];
     
