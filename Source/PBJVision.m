@@ -1372,9 +1372,14 @@ typedef void (^PBJVisionBlock)();
 
 - (void)focusAtAdjustedPointOfInterest:(CGPoint)adjustedPoint
 {
-    if ([_currentDevice isAdjustingFocus] || [_currentDevice isAdjustingExposure])
+    if ([_currentDevice isAdjustingFocus]){
+        NSLog(@"focusAtAdjustedPointOfInterest: skipped, isAdjustingFocus");
         return;
-
+    }
+    if ([_currentDevice isAdjustingExposure]){
+        NSLog(@"focusAtAdjustedPointOfInterest: skipped, isAdjustingExposure");
+        return;
+    }
     NSError *error = nil;
     if ([_currentDevice lockForConfiguration:&error]) {
     
