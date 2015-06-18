@@ -1462,6 +1462,12 @@ typedef void (^PBJVisionBlock)();
     }
 }
 
+- (void)muteAudio:(BOOL)mute {
+    if(_mediaWriter){
+        [_mediaWriter muteAudio:mute];
+    }
+}
+
 #pragma mark - mirroring
 
 - (void)setMirroringMode:(PBJMirroringMode)mirroringMode

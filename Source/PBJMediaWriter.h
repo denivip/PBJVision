@@ -49,6 +49,7 @@
 @property (nonatomic, readonly) CMTime audioTimestamp;
 @property (nonatomic, readonly) CMTime videoTimestamp;
 
+- (void)muteAudio:(BOOL)muteOrNot;
 - (void)writeSampleBuffer:(CMSampleBufferRef)sampleBuffer withMediaTypeVideo:(BOOL)video;
 - (void)finishWritingWithCompletionHandler:(void (^)(void))handler;
 - (BOOL)canBeFinalized;

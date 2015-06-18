@@ -204,6 +204,9 @@ static CGFloat const PBJVideoBitRate1280x750 = 5000000 * 8;
 @property (nonatomic, readonly) BOOL canCapturePhoto;
 - (void)capturePhoto;
 
+// audio
+- (void)muteAudio:(BOOL)mute;
+
 // video
 // use pause/resume if a session is in progress, end finalizes that recording session
 

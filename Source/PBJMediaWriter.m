@@ -46,6 +46,7 @@
     
     CMTime _audioTimestamp;
     CMTime _videoTimestamp;
+    BOOL isMuted;
 }
 
 @end
@@ -229,6 +230,31 @@
     return self.isVideoReady;
 }
 
+- (void) muteAudioInBuffer:(CMSampleBufferRef)sampleBuffer
+{
+    CMItemCount numSamples = CMSampleBufferGetNumSamples(sampleBuffer);
+    if(numSamples == 0){
+        return;
+    }
+    NSUInteger channelIndex = 0;
+    CMBlockBufferRef audioBlockBuffer = CMSampleBufferGetDataBuffer(sampleBuffer);
+    size_t sampleSize = CMSampleBufferGetSampleSize (sampleBuffer, 0);//sizeof(SInt16)
+    size_t audioBlockBufferOffset = (channelIndex * numSamples * sampleSize);
+    size_t lengthAtOffset = 0;
+    size_t totalLength = 0;
+    Byte *samples = NULL;
+    CMBlockBufferGetDataPointer(audioBlockBuffer, audioBlockBufferOffset, &lengthAtOffset, &totalLength, (char **)(&samples));
+    memset(samples, 0, numSamples*sampleSize);
+    //for (NSInteger i=0; i<numSamples; i++) {
+    //    samples[i] = (SInt16)0;
+    //}
+    
+}
+
+- (void)muteAudio:(BOOL)muteOrNot {
+    isMuted = muteOrNot;
+}
+
 #pragma mark - sample buffer writing
 
 - (void)writeSampleBuffer:(CMSampleBufferRef)sampleBuffer withMediaTypeVideo:(BOOL)video
@@ -290,6 +316,9 @@
                 DLog("%@: skipping buffer", self);
             }
 		} else {
+            if(isMuted){
+                [self muteAudioInBuffer:sampleBuffer];
+            }
 			if (_assetWriterAudioInput.readyForMoreMediaData) {
 				if ([_assetWriterAudioInput appendSampleBuffer:sampleBuffer]) {
                     _audioTimestamp = timestamp;
