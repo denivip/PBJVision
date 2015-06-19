@@ -235,13 +235,47 @@
 {
     CVImageBufferRef imageBuffer = CMSampleBufferGetImageBuffer(sampleBuffer);
     if (CVPixelBufferLockBaseAddress(imageBuffer, 0) == kCVReturnSuccess){
-        void *baseAddress = CVPixelBufferGetBaseAddress(imageBuffer);
-        // Get the number of bytes per row for the pixel buffer
-        size_t bytesPerRow = CVPixelBufferGetBytesPerRow(imageBuffer);
-        // Get the pixel buffer width and height
-        //size_t width = CVPixelBufferGetWidth(imageBuffer);
-        size_t height = CVPixelBufferGetHeight(imageBuffer);
-        memset(baseAddress,0,bytesPerRow*height);
+        //http://10.0.1.14:7000/index.m3u8
+        //videoSettings = @{ (id)kCVPixelBufferPixelFormatTypeKey : @(kCVPixelFormatType_420YpCbCr8BiPlanarFullRange) };
+        //videoSettings = @{ (id)kCVPixelBufferPixelFormatTypeKey : @(kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange) };
+        int planes = CVPixelBufferGetPlaneCount(imageBuffer);
+        if(planes > 0){
+            // http://stackoverflow.com/questions/4085474/how-to-get-the-y-component-from-cmsamplebuffer-resulted-from-the-avcapturesessio
+            OSType pixelFormat = CVPixelBufferGetPixelFormatType(imageBuffer);
+            for(int i=0; i < planes;i++){
+                Byte* baseAddress = CVPixelBufferGetBaseAddressOfPlane(imageBuffer, i);
+                size_t bytesPerRow = CVPixelBufferGetBytesPerRowOfPlane(imageBuffer, i);
+                size_t height = CVPixelBufferGetHeightOfPlane(imageBuffer, i);
+                size_t totalBytes = bytesPerRow*height;
+                if (pixelFormat == '420v' || pixelFormat == '420f') {
+                    //memset(baseAddress,16,totalBytes);
+                    for(uint32_t i = 0; i < totalBytes-4; i += 4) {
+                        baseAddress[i+0] = 0x80;
+                        baseAddress[i+1] = 0x80;
+                        baseAddress[i+2] = 0x80;
+                        baseAddress[i+3] = 0x80;
+                    }
+                }else{
+                    //if (pixelFormat == '2vuy') {
+                    memset(baseAddress,0,totalBytes);
+                }
+            }
+        }else{
+            Byte* baseAddress = CVPixelBufferGetBaseAddress(imageBuffer);
+            // Get the number of bytes per row for the pixel buffer
+            size_t bytesPerRow = CVPixelBufferGetBytesPerRow(imageBuffer);
+            // Get the pixel buffer width and height
+            //size_t width = CVPixelBufferGetWidth(imageBuffer);
+            size_t height = CVPixelBufferGetHeight(imageBuffer);
+            size_t totalBytes = bytesPerRow*height;
+            memset(baseAddress,255,totalBytes);
+            //for(uint32_t i = 0; i < totalBytes-4; i += 4) {
+            //    baseAddress[i+0] = 0x00;
+            //    baseAddress[i+1] = 0x00;
+            //    baseAddress[i+2] = 0x00;
+            //    baseAddress[i+3] = 0x00;
+            //}
+        }
         CVPixelBufferUnlockBaseAddress(imageBuffer, 0);
         return;
     }
