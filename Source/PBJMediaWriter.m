@@ -242,19 +242,27 @@
         if(planes > 0){
             // http://stackoverflow.com/questions/4085474/how-to-get-the-y-component-from-cmsamplebuffer-resulted-from-the-avcapturesessio
             OSType pixelFormat = CVPixelBufferGetPixelFormatType(imageBuffer);
-            for(int i=0; i < planes;i++){
+            for(int i=0; i < planes; i++){
                 Byte* baseAddress = CVPixelBufferGetBaseAddressOfPlane(imageBuffer, i);
                 size_t bytesPerRow = CVPixelBufferGetBytesPerRowOfPlane(imageBuffer, i);
                 size_t height = CVPixelBufferGetHeightOfPlane(imageBuffer, i);
                 size_t totalBytes = bytesPerRow*height;
                 if (pixelFormat == '420v' || pixelFormat == '420f') {
-                    //memset(baseAddress,16,totalBytes);
-                    for(uint32_t i = 0; i < totalBytes-4; i += 4) {
-                        baseAddress[i+0] = 0x80;
-                        baseAddress[i+1] = 0x80;
-                        baseAddress[i+2] = 0x80;
-                        baseAddress[i+3] = 0x80;
-                    }
+                    memset(baseAddress,i == 1?0x80:0x10,totalBytes);
+//                    for(uint32_t j = 0; j < totalBytes-4; j += 4) {
+//                        if(i == 1){
+//                            // grayscale from green
+//                            baseAddress[j+0] = 0x80;
+//                            baseAddress[j+1] = 0x80;
+//                            baseAddress[j+2] = 0x80;
+//                            baseAddress[j+3] = 0x80;
+//                        }else{
+//                            baseAddress[j+0] = 0x10;
+//                            baseAddress[j+1] = 0x10;
+//                            baseAddress[j+2] = 0x10;
+//                            baseAddress[j+3] = 0x10;
+//                        }
+//                    }
                 }else{
                     //if (pixelFormat == '2vuy') {
                     memset(baseAddress,0,totalBytes);

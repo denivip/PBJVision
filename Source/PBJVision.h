@@ -194,6 +194,8 @@ static CGFloat const PBJVideoBitRate1280x750 = 5000000 * 8;
 @property (nonatomic) PBJExposureMode exposureMode;
 @property (nonatomic, readonly, getter=isExposureLockSupported) BOOL exposureLockSupported;
 - (void)exposeAtAdjustedPointOfInterest:(CGPoint)adjustedPoint;
+- (void)setExposurePercentage:(CGFloat)needle;
+- (Float64)getExposurePercentage;
 
 // zoom
 - (BOOL)isZoomingSupported;
@@ -232,6 +234,7 @@ static CGFloat const PBJVideoBitRate1280x750 = 5000000 * 8;
 - (void)endVideoCapture;
 - (void)cancelVideoCapture;
 - (void)flushVideoCapture:(BOOL)finalize;
+@property (nonatomic) int flushPending;
 // thumbnails
 
 @property (nonatomic) BOOL thumbnailEnabled; // thumbnail generation, disabling reduces processing time for a photo or video

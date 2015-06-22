@@ -134,6 +134,10 @@ typedef NS_ENUM(GLint, PBJVisionUniformLocationTypes)
     NSInteger _videoFrameRate;
     NSDictionary *_additionalCompressionProperties;
     CGFloat _maxZoomFactor;
+    CMTime _maxExposure;
+    CMTime _minExposure;
+    CGFloat _minISO;
+    CGFloat _maxISO;
     
     AVCaptureDevice *_currentDevice;
     AVCaptureDeviceInput *_currentInput;
@@ -515,7 +519,60 @@ typedef NS_ENUM(GLint, PBJVisionUniformLocationTypes)
 
 - (BOOL)isExposureLockSupported
 {
+    if(CMTIME_IS_INVALID(_maxExposure)){
+        _maxExposure = _currentDevice.activeFormat.maxExposureDuration;
+    }
+    if(CMTIME_IS_INVALID(_minExposure)){
+        _minExposure = _currentDevice.activeFormat.minExposureDuration;
+    }
+    if(_minISO < 0){
+        _minISO = _currentDevice.activeFormat.minISO;
+    }
+    if(_maxISO < 0){
+        _maxISO = _currentDevice.activeFormat.maxISO;
+    }
     return [_currentDevice isExposureModeSupported:AVCaptureExposureModeLocked];
+}
+
+- (Float64)getExposurePercentage
+{
+    if(![self isExposureLockSupported]){
+        return -1.0;
+    }
+    Float64 mint = CMTimeGetSeconds(_minExposure);
+    Float64 maxt = CMTimeGetSeconds(_maxExposure);
+    Float64 expstime = CMTimeGetSeconds(_currentDevice.exposureDuration);
+    Float64 percentage = (expstime-mint)/(maxt-mint);
+    return percentage;
+}
+
+- (void)setExposurePercentage:(CGFloat)needle
+{
+    if(![self isExposureLockSupported]){
+        return;
+    }
+    @weakify(self);
+    NSError *error = nil;
+    if (_currentDevice && [_currentDevice lockForConfiguration:&error]) {
+        Float64 mint = CMTimeGetSeconds(_minExposure);
+        Float64 maxt = CMTimeGetSeconds(_maxExposure);
+        Float64 expstime = mint+(maxt-mint)*needle;
+        CMTime expscmtime = CMTimeMakeWithSeconds(expstime, 100000);
+        if(expstime <= mint){
+            expscmtime = _minExposure;
+        }else if(expstime >= maxt){
+            expscmtime = _maxExposure;
+        }
+        //NSLog(@"setExposurePercentage: %f (%f:%f -> %f)",needle, mint, maxt, expstime);
+        //[_currentDevice setExposureModeCustomWithDuration:AVCaptureExposureDurationCurrent ISO:_minISO+(_maxISO-_minISO)*needle completionHandler:^(CMTime syncTime){
+        [_currentDevice setExposureModeCustomWithDuration:expscmtime ISO:AVCaptureISOCurrent completionHandler:^(CMTime syncTime){
+            @strongify(self);
+            [self setExposureMode:PBJExposureModeLocked];
+        }];
+        [_currentDevice unlockForConfiguration];
+    } else if (error) {
+        DLog(@"error locking device for exposure mode change (%@)", error);
+    }
 }
 
 - (void)setExposureMode:(PBJExposureMode)exposureMode
@@ -744,6 +801,10 @@ typedef NS_ENUM(GLint, PBJVisionUniformLocationTypes)
         // default audio/video configuration
         _audioBitRate = 64000;
         _maxZoomFactor = -1.0;
+        _minExposure = kCMTimeInvalid;
+        _maxExposure = kCMTimeInvalid;
+        _minISO = -1.0;
+        _maxISO = -1.0;
         
         // default flags
         _flags.thumbnailEnabled = YES;
@@ -1470,17 +1531,21 @@ typedef void (^PBJVisionBlock)();
 }
 
 - (void)muteAudio:(BOOL)mute {
-    _flags.isAudioMuted = mute?1:0;
-    if(_mediaWriter){
-        [_mediaWriter muteAudio:mute];
-    }
+    [self _enqueueBlockOnCaptureVideoQueue:^{
+        _flags.isAudioMuted = mute?1:0;
+        if(_mediaWriter){
+            [_mediaWriter muteAudio:mute];
+        }
+    }];
 }
 
 - (void)muteVideo:(BOOL)mute {
-    _flags.isVideoMuted = mute?1:0;
-    if(_mediaWriter){
-        [_mediaWriter muteVideo:mute];
-    }
+    [self _enqueueBlockOnCaptureVideoQueue:^{
+        _flags.isVideoMuted = mute?1:0;
+        if(_mediaWriter){
+            [_mediaWriter muteVideo:mute];
+        }
+    }];
 }
 
 #pragma mark - mirroring
@@ -1963,7 +2028,11 @@ typedef void (^PBJVisionBlock)();
 
 - (void)flushVideoCapture:(BOOL)finalize
 {
+    //NSLog(@"flushVideoCapture - <<");
+    self.flushPending++;
     [self _enqueueBlockOnCaptureVideoQueue:^{
+        self.flushPending--;
+        //NSLog(@"flushVideoCapture - >>");
         if (!_flags.recording){
             DLog(@"not recording");
             return;
