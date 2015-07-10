@@ -1190,7 +1190,8 @@ typedef void (^PBJVisionBlock)();
             if ([videoConnection respondsToSelector:@selector(setPreferredVideoStabilizationMode:)]) {
                 [videoConnection setPreferredVideoStabilizationMode:AVCaptureVideoStabilizationModeAuto];
             } else {
-                [videoConnection setEnablesVideoStabilizationWhenAvailable:YES];
+                //[videoConnection setEnablesVideoStabilizationWhenAvailable:YES];
+                videoConnection.preferredVideoStabilizationMode = AVCaptureVideoStabilizationModeAuto;
             }
         }
         
