@@ -31,6 +31,7 @@
 #import <CoreImage/CoreImage.h>
 #import <ImageIO/ImageIO.h>
 #import <OpenGLES/EAGL.h>
+#import <MobileCoreServices/UTCoreTypes.h>
 
 #define LOG_VISION 0
 #ifndef DLog
@@ -1890,7 +1891,7 @@ typedef void (^PBJVisionBlock)();
 - (void)initializeMediaWriter
 {
     NSString *guid = [[NSUUID new] UUIDString];
-    NSString *outputFile = [NSString stringWithFormat:@"video_%@.mp4", guid];
+    NSString *outputFile = [NSString stringWithFormat:@"video_%@.%@", guid, [self.captureContainerFormat isEqualToString:(NSString*)kUTTypeMPEG4]?@"mp4":@"mov"];
     
     if ([_delegate respondsToSelector:@selector(vision:willStartVideoCaptureToFile:)]) {
         outputFile = [_delegate vision:self willStartVideoCaptureToFile:outputFile];
