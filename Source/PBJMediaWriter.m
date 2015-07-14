@@ -29,6 +29,7 @@
 #import <UIKit/UIDevice.h>
 #import <MobileCoreServices/UTCoreTypes.h>
 
+
 #define LOG_WRITER 0
 #if !defined(NDEBUG) && LOG_WRITER
 #   define DLog(fmt, ...) NSLog((@"writer: " fmt), ##__VA_ARGS__);
@@ -38,6 +39,7 @@
 
 @interface PBJMediaWriter ()
 {
+    H264HwEncoderImpl *h264enc;
     AVAssetWriter *_assetWriter;
 	AVAssetWriterInput *_assetWriterAudioInput;
 	AVAssetWriterInput *_assetWriterVideoInput;
@@ -48,6 +50,7 @@
     CMTime _videoTimestamp;
     BOOL isAudioMuted;
     BOOL isVideoMuted;
+    PBJInmemEncoding inmemEncoding;
 }
 
 @end
@@ -60,24 +63,31 @@
 @synthesize videoTimestamp = _videoTimestamp;
 
 #pragma mark - getters/setters
-
+- (NSURL*)getOutputURL
+{
+    return _outputURL;
+}
 - (BOOL)isAudioReady
 {
     AVAuthorizationStatus audioAuthorizationStatus = [AVCaptureDevice authorizationStatusForMediaType:AVMediaTypeAudio];
-            
     BOOL isAudioNotAuthorized = (audioAuthorizationStatus == AVAuthorizationStatusNotDetermined || audioAuthorizationStatus == AVAuthorizationStatusDenied);
-    BOOL isAudioSetup = (_assetWriterAudioInput != nil) || isAudioNotAuthorized;
-    
+    BOOL isAudioSetup = !isAudioNotAuthorized;
+    if(inmemEncoding != PBJInmemEncodingExclusive){
+        isAudioSetup = (_assetWriterAudioInput != nil) || isAudioNotAuthorized;
+    }
     return isAudioSetup;
 }
 
 - (BOOL)isVideoReady
 {
     AVAuthorizationStatus videoAuthorizationStatus = [AVCaptureDevice authorizationStatusForMediaType:AVMediaTypeVideo];
-
     BOOL isVideoNotAuthorized = (videoAuthorizationStatus == AVAuthorizationStatusNotDetermined || videoAuthorizationStatus == AVAuthorizationStatusDenied);
-    BOOL isVideoSetup = (_assetWriterVideoInput != nil) || isVideoNotAuthorized;
-    
+    BOOL isVideoSetup = !isVideoNotAuthorized;
+    if(inmemEncoding != PBJInmemEncodingExclusive){
+        isVideoSetup = (_assetWriterVideoInput != nil) || isVideoNotAuthorized;
+    }else{
+        isVideoSetup =  !isVideoNotAuthorized && (h264enc.isActive > 0);
+    }
     return isVideoSetup;
 }
 
@@ -88,35 +98,36 @@
 
 #pragma mark - init
 
-- (id)initWithOutputURL:(NSURL *)outputURL format:(NSString*)format
+- (id)initWithOutputURL:(NSURL *)outputURL format:(NSString*)format inmem:(PBJInmemEncoding)inmemEnc
 {
     self = [super init];
     if (self) {
+        inmemEncoding = inmemEnc;
         NSError *error = nil;
         if(format == nil){
             format = (NSString *)kUTTypeMPEG4;
         }
-        _assetWriter = [AVAssetWriter assetWriterWithURL:outputURL fileType:format error:&error];
-        if (error) {
-            DLog(@"error setting up the asset writer (%@)", error);
-            _assetWriter = nil;
-            return nil;
+        if(inmemEncoding == PBJInmemEncodingExclusive){
+            h264enc = [[H264HwEncoderImpl alloc] init];
+        }else{
+            _assetWriter = [AVAssetWriter assetWriterWithURL:outputURL fileType:format error:&error];
+            if (error) {
+                DLog(@"error setting up the asset writer (%@)", error);
+                _assetWriter = nil;
+                return nil;
+            }
+            _assetWriter.shouldOptimizeForNetworkUse = YES;
+            _assetWriter.metadata = [self _metadataArray];
         }
 
         _outputURL = outputURL;
-        
-        _assetWriter.shouldOptimizeForNetworkUse = YES;
-        _assetWriter.metadata = [self _metadataArray];
-
         _audioTimestamp = kCMTimeInvalid;
         _videoTimestamp = kCMTimeInvalid;
 
         // ensure authorization is permitted, if not already prompted
         // it's possible to capture video without audio or audio without video
         if ([[AVCaptureDevice class] respondsToSelector:@selector(authorizationStatusForMediaType:)]) {
-        
             AVAuthorizationStatus audioAuthorizationStatus = [AVCaptureDevice authorizationStatusForMediaType:AVMediaTypeAudio];
-            
             if (audioAuthorizationStatus == AVAuthorizationStatusNotDetermined || audioAuthorizationStatus == AVAuthorizationStatusDenied) {
                 if (audioAuthorizationStatus == AVAuthorizationStatusDenied && [_delegate respondsToSelector:@selector(mediaWriterDidObserveAudioAuthorizationStatusDenied:)]) {
                     [_delegate mediaWriterDidObserveAudioAuthorizationStatusDenied:self];
@@ -124,17 +135,21 @@
             }
             
             AVAuthorizationStatus videoAuthorizationStatus = [AVCaptureDevice authorizationStatusForMediaType:AVMediaTypeVideo];
-            
             if (videoAuthorizationStatus == AVAuthorizationStatusNotDetermined || videoAuthorizationStatus == AVAuthorizationStatusDenied) {
                 if (videoAuthorizationStatus == AVAuthorizationStatusDenied && [_delegate respondsToSelector:@selector(mediaWriterDidObserveVideoAuthorizationStatusDenied:)]) {
                     [_delegate mediaWriterDidObserveVideoAuthorizationStatusDenied:self];
                 }
             }
-            
         }
         //DLog(@"%@: prepared to write to (%@)", self, outputURL);
     }
     return self;
+}
+
+- (void)setDelegate:(id<PBJMediaWriterDelegate,H264HwEncoderImplDelegate>)delegate
+{
+    _delegate = delegate;
+    h264enc.delegate = delegate;
 }
 
 #pragma mark - private
@@ -168,6 +183,9 @@
 
 - (BOOL)setupAudioWithSettings:(NSDictionary *)audioSettings
 {
+    if(inmemEncoding == PBJInmemEncodingExclusive){
+        return YES;
+    }
 	if (!_assetWriterAudioInput && [_assetWriter canApplyOutputSettings:audioSettings forMediaType:AVMediaTypeAudio]) {
     
 		_assetWriterAudioInput = [AVAssetWriterInput assetWriterInputWithMediaType:AVMediaTypeAudio outputSettings:audioSettings];
@@ -197,6 +215,10 @@
 
 - (BOOL)setupVideoWithSettings:(NSDictionary *)videoSettings
 {
+    if(inmemEncoding == PBJInmemEncodingExclusive){
+        [h264enc initEncode:[[videoSettings objectForKey:AVVideoWidthKey] intValue] height:[[videoSettings objectForKey:AVVideoHeightKey] intValue]];
+        return YES;
+    }
 	if (!_assetWriterVideoInput && [_assetWriter canApplyOutputSettings:videoSettings forMediaType:AVMediaTypeVideo]) {
     
 		_assetWriterVideoInput = [AVAssetWriterInput assetWriterInputWithMediaType:AVMediaTypeVideo outputSettings:videoSettings];
@@ -323,6 +345,13 @@
         return;
     }
 
+    if(inmemEncoding == PBJInmemEncodingExclusive){
+        if(video){
+            [h264enc encode:sampleBuffer];
+        }
+        return;
+    }
+    
     // setup the writer
 	if ( _assetWriter.status == AVAssetWriterStatusUnknown ) {
     
@@ -395,12 +424,19 @@
 
 - (void)initializeWriting:(CMTime)timestamp
 {
+    if(inmemEncoding == PBJInmemEncodingExclusive){
+        return;
+    }
     [_assetWriter startSessionAtSourceTime:timestamp];
 }
 
 - (void)finalizeWriting
 {
     if(CMTIME_IS_INVALID(_videoTimestamp)){
+        return;
+    }
+    if(inmemEncoding == PBJInmemEncodingExclusive){
+        [h264enc stopEncode];
         return;
     }
     [_assetWriter endSessionAtSourceTime:_videoTimestamp];
@@ -418,7 +454,7 @@
 - (void)finishWritingWithCompletionHandler:(void (^)(void))handler
 {
     DLog("%@: finalizing", self);
-    if (_assetWriter.status == AVAssetWriterStatusUnknown) {
+    if (_assetWriter && _assetWriter.status == AVAssetWriterStatusUnknown) {
         DLog(@"%@: asset writer is in an unknown state, wasn't recording", self);
         return;
     }
@@ -428,6 +464,10 @@
         return;
     }
     [self finalizeWriting];
+    if(inmemEncoding == PBJInmemEncodingExclusive){
+        handler();
+        return;
+    }
     [_assetWriter finishWritingWithCompletionHandler:handler];
 }
 

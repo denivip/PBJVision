@@ -25,6 +25,7 @@
 
 #import <Foundation/Foundation.h>
 #import <AVFoundation/AVFoundation.h>
+#import "PBJMediaWriter.h"
 
 // vision types
 
@@ -165,6 +166,9 @@ static CGFloat const PBJVideoBitRate1280x750 = 5000000 * 8;
 
 // video container format
 @property (nonatomic, copy) NSString *captureContainerFormat;
+
+
+@property (nonatomic) PBJInmemEncoding inmemEncoding;
 
 // preview
 

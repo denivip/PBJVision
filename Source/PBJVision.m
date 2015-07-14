@@ -85,7 +85,9 @@ typedef NS_ENUM(GLint, PBJVisionUniformLocationTypes)
 @interface PBJVision () <
     AVCaptureAudioDataOutputSampleBufferDelegate,
     AVCaptureVideoDataOutputSampleBufferDelegate,
-    PBJMediaWriterDelegate>
+    PBJMediaWriterDelegate,
+    H264HwEncoderImplDelegate
+>
 {
     // AV
 
@@ -166,6 +168,7 @@ typedef NS_ENUM(GLint, PBJVisionUniformLocationTypes)
     CVOpenGLESTextureCacheRef _videoTextureCache;
     
     CIContext *_ciContext;
+    NSFileHandle *fileHandle;
     
     // flags
     
@@ -1218,7 +1221,9 @@ typedef void (^PBJVisionBlock)();
         }
 
         NSDictionary *videoSettings = nil;
-        if (supportsFullRangeYUV) {
+        if(self.inmemEncoding == PBJInmemEncodingExclusive){
+            videoSettings = @{ (id)kCVPixelBufferPixelFormatTypeKey : @(kCVPixelFormatType_420YpCbCr8BiPlanarFullRange) };
+        } else if (supportsFullRangeYUV) {
             videoSettings = @{ (id)kCVPixelBufferPixelFormatTypeKey : @(kCVPixelFormatType_420YpCbCr8BiPlanarFullRange) };
         } else if (supportsVideoRangeYUV) {
             videoSettings = @{ (id)kCVPixelBufferPixelFormatTypeKey : @(kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange) };
@@ -1229,7 +1234,6 @@ typedef void (^PBJVisionBlock)();
         
         // setup video device configuration
         if (floor(NSFoundationVersionNumber) > NSFoundationVersionNumber_iOS_6_1) {
-
             NSError *error = nil;
             if ([newCaptureDevice lockForConfiguration:&error]) {
             
@@ -1242,9 +1246,7 @@ typedef void (^PBJVisionBlock)();
             } else if (error) {
                 DLog(@"error locking device for video device configuration (%@)", error);
             }
-        
         }
-        
     } else if ( newCaptureOutput && (newCaptureOutput == _captureOutputPhoto) ) {
     
         // specify photo preset
@@ -1744,7 +1746,7 @@ typedef void (^PBJVisionBlock)();
 
     // add any attachments to propagate
     NSDictionary *tiffDict = @{ (NSString *)kCGImagePropertyTIFFSoftware : @"PBJVision",
-                                    (NSString *)kCGImagePropertyTIFFDateTime : [NSString PBJformattedTimestampStringFromDate:[NSDate date]] };
+                                (NSString *)kCGImagePropertyTIFFDateTime : [NSString PBJformattedTimestampStringFromDate:[NSDate date]] };
     CMSetAttachment(sampleBuffer, kCGImagePropertyTIFFDictionary, (__bridge CFTypeRef)(tiffDict), kCMAttachmentMode_ShouldPropagate);
 
     // add photo metadata (ie EXIF: Aperture, Brightness, Exposure, FocalLength, etc)
@@ -1891,11 +1893,17 @@ typedef void (^PBJVisionBlock)();
 - (void)initializeMediaWriter
 {
     NSString *guid = [[NSUUID new] UUIDString];
-    NSString *outputFile = [NSString stringWithFormat:@"video_%@.%@", guid, [self.captureContainerFormat isEqualToString:(NSString*)kUTTypeMPEG4]?@"mp4":@"mov"];
-    
+    NSString *extn = nil;
+    if(self.inmemEncoding == PBJInmemEncodingExclusive){
+        extn = @"h264";
+    }else if([self.captureContainerFormat isEqualToString:(NSString*)kUTTypeMPEG4]){
+        extn = @"mp4";
+    }else{
+        extn = @"mov";
+    }
+    NSString *outputFile = [NSString stringWithFormat:@"video_%@.%@", guid, extn];
     if ([_delegate respondsToSelector:@selector(vision:willStartVideoCaptureToFile:)]) {
         outputFile = [_delegate vision:self willStartVideoCaptureToFile:outputFile];
-        
         if (!outputFile) {
             [self _failVideoCaptureWithErrorCode:PBJVisionErrorBadOutputFile];
             return;
@@ -1909,7 +1917,6 @@ typedef void (^PBJVisionBlock)();
         NSError *error = nil;
         if (![[NSFileManager defaultManager] removeItemAtPath:outputPath error:&error]) {
             [self _failVideoCaptureWithErrorCode:PBJVisionErrorOutputFileExists];
-            
             DLog(@"could not setup an output file (file exists)");
             return;
         }
@@ -1917,7 +1924,6 @@ typedef void (^PBJVisionBlock)();
     
     if (!outputPath || [outputPath length] == 0) {
         [self _failVideoCaptureWithErrorCode:PBJVisionErrorBadOutputFile];
-        
         DLog(@"could not setup an output file");
         return;
     }
@@ -1926,8 +1932,9 @@ typedef void (^PBJVisionBlock)();
         _mediaWriter.delegate = nil;
         _mediaWriter = nil;
     }
-    _mediaWriter = [[PBJMediaWriter alloc] initWithOutputURL:outputURL format:self.captureContainerFormat];
+    _mediaWriter = [[PBJMediaWriter alloc] initWithOutputURL:outputURL format:self.captureContainerFormat inmem:self.inmemEncoding];
     _mediaWriter.delegate = self;
+
     if(_flags.isAudioMuted > 0){
         [_mediaWriter muteAudio:YES];
     }
@@ -1953,8 +1960,9 @@ typedef void (^PBJVisionBlock)();
     }
     
     [self _enqueueBlockOnMainQueue:^{
-        if ([_delegate respondsToSelector:@selector(visionDidStartVideoCapture:)])
+        if ([_delegate respondsToSelector:@selector(visionDidStartVideoCapture:)]){
             [_delegate visionDidStartVideoCapture:self];
+        }
     }];
 }
 
@@ -2740,6 +2748,53 @@ typedef void (^PBJVisionBlock)();
 
 - (void)mediaWriterDidObserveVideoAuthorizationStatusDenied:(PBJMediaWriter *)mediaWriter
 {
+}
+
+- (void)inmemEncodeStart
+{
+    NSError* error = nil;
+    NSURL* ou = [_mediaWriter getOutputURL];
+    [[NSFileManager defaultManager] createFileAtPath:[ou path] contents:[NSData new] attributes:nil];
+    fileHandle = [NSFileHandle fileHandleForWritingToURL:ou error:&error];
+    NSLog(@"Creating output handle: %@ error: %@", fileHandle, error);
+}
+
+- (void)inmemEncodeStop
+{
+    [fileHandle closeFile];
+    fileHandle = NULL;
+}
+
+- (void)gotSpsPps:(NSData*)sps pps:(NSData*)pps
+{
+    //NSLog(@"gotSpsPps %d %d", (int)[sps length], (int)[pps length]);
+    //[sps writeToFile:h264File atomically:YES];
+    //[pps writeToFile:h264File atomically:YES];
+    //write(fd, [sps bytes], [sps length]);
+    //write(fd, [pps bytes], [pps length]);
+    if (fileHandle != NULL)
+    {
+        const char bytes[] = "\x00\x00\x00\x01";
+        size_t length = (sizeof bytes) - 1;//string literals have implicit trailing '\0'
+        NSData *ByteHeader = [NSData dataWithBytes:bytes length:length];
+        [fileHandle writeData:ByteHeader];
+        [fileHandle writeData:sps];
+        [fileHandle writeData:ByteHeader];
+        [fileHandle writeData:pps];
+    }
+}
+
+- (void)gotEncodedData:(NSData*)data isKeyFrame:(BOOL)isKeyFrame
+{
+    //NSLog(@"gotEncodedData %d", (int)[data length]);
+    if (fileHandle != NULL)
+    {
+        const char bytes[] = "\x00\x00\x00\x01";
+        size_t length = (sizeof bytes) - 1;//string literals have implicit trailing '\0'
+        NSData *ByteHeader = [NSData dataWithBytes:bytes length:length];
+        [fileHandle writeData:ByteHeader];
+        [fileHandle writeData:data];
+    }
 }
 
 #pragma mark - sample buffer processing
