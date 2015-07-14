@@ -120,7 +120,7 @@ static CGFloat const PBJVideoBitRate1920x1080 = 2975000 * 8;
 static CGFloat const PBJVideoBitRate960x540 = 3750000 * 8;
 static CGFloat const PBJVideoBitRate1280x750 = 5000000 * 8;
 
-@class EAGLContext;
+@class EAGLContext, CBCircularData;
 @protocol PBJVisionDelegate;
 @interface PBJVision : NSObject
 
@@ -247,7 +247,7 @@ static CGFloat const PBJVideoBitRate1280x750 = 5000000 * 8;
 - (void)captureCurrentVideoThumbnail;
 - (void)captureVideoThumbnailAtFrame:(int64_t)frame;
 - (void)captureVideoThumbnailAtTime:(Float64)seconds;
-
+- (CBCircularData*)getLiveInmemBufferWithOffset:(NSUInteger*)out_offset;
 @end
 
 @protocol PBJVisionDelegate <NSObject>

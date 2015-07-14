@@ -32,6 +32,7 @@
 #import <ImageIO/ImageIO.h>
 #import <OpenGLES/EAGL.h>
 #import <MobileCoreServices/UTCoreTypes.h>
+#import "CBCircularData.h"
 
 #define LOG_VISION 0
 #ifndef DLog
@@ -46,6 +47,7 @@ NSString * const PBJVisionErrorDomain = @"PBJVisionErrorDomain";
 
 static uint64_t const PBJVisionRequiredMinimumDiskSpaceInBytes = 49999872; // ~ 47 MB
 static CGFloat const PBJVisionThumbnailWidth = 160.0f;
+static uint64_t const PBJVisionInmemBufferMb = 1;
 
 // KVO contexts
 
@@ -168,7 +170,8 @@ typedef NS_ENUM(GLint, PBJVisionUniformLocationTypes)
     CVOpenGLESTextureCacheRef _videoTextureCache;
     
     CIContext *_ciContext;
-    NSFileHandle *fileHandle;
+    CBCircularData *_liveEncodedBuffer;
+    NSUInteger _liveEncodedBufferOffset;
     
     // flags
     
@@ -790,7 +793,8 @@ typedef NS_ENUM(GLint, PBJVisionUniformLocationTypes)
             DLog(@"failed to create GL context");
         }
         [self _setupGL];
-        
+        _liveEncodedBuffer = [[CBCircularData alloc] initWithDepth:PBJVisionInmemBufferMb*1000000];
+        _liveEncodedBufferOffset = 0;
         _captureSessionPreset = AVCaptureSessionPresetMedium;
         _captureDirectory = nil;
 
@@ -2752,53 +2756,42 @@ typedef void (^PBJVisionBlock)();
 
 - (void)inmemEncodeStart
 {
-    NSError* error = nil;
-    NSURL* ou = [_mediaWriter getOutputURL];
-    [[NSFileManager defaultManager] createFileAtPath:[ou path] contents:[NSData new] attributes:nil];
-    fileHandle = [NSFileHandle fileHandleForWritingToURL:ou error:&error];
-    NSLog(@"Creating output handle: %@ error: %@", fileHandle, error);
+    //NSError* error = nil;
+    //NSURL* ou = [_mediaWriter getOutputURL];
+    //[[NSFileManager defaultManager] createFileAtPath:[ou path] contents:[NSData new] attributes:nil];
+    //fileHandle = [NSFileHandle fileHandleForWritingToURL:ou error:&error];
+    //NSLog(@"Creating output handle: %@ error: %@", fileHandle, error);
+    [_liveEncodedBuffer removeAll];
 }
 
 - (void)inmemEncodeStop
 {
-    [fileHandle closeFile];
-    fileHandle = NULL;
+    //[fileHandle closeFile];
+    //fileHandle = NULL;
+    [_liveEncodedBuffer removeAll];
 }
 
-- (void)gotSpsPps:(NSData*)sps pps:(NSData*)pps
+- (void)inmemSpsPps:(NSData*)sps pps:(NSData*)pps
 {
-    //NSLog(@"gotSpsPps %d %d", (int)[sps length], (int)[pps length]);
-    //[sps writeToFile:h264File atomically:YES];
-    //[pps writeToFile:h264File atomically:YES];
-    //write(fd, [sps bytes], [sps length]);
-    //write(fd, [pps bytes], [pps length]);
-    if (fileHandle != NULL)
-    {
-        const char bytes[] = "\x00\x00\x00\x01";
-        size_t length = (sizeof bytes) - 1;//string literals have implicit trailing '\0'
-        NSData *ByteHeader = [NSData dataWithBytes:bytes length:length];
-        [fileHandle writeData:ByteHeader];
-        [fileHandle writeData:sps];
-        [fileHandle writeData:ByteHeader];
-        [fileHandle writeData:pps];
-    }
+    const char bytes[] = "\x00\x00\x00\x01";
+    size_t length = (sizeof bytes) - 1;//string literals have implicit trailing '\0'
+    NSData *ByteHeader = [NSData dataWithBytes:bytes length:length];
+    _liveEncodedBufferOffset = [_liveEncodedBuffer writeData:ByteHeader];
+    [_liveEncodedBuffer writeData:sps];
+    [_liveEncodedBuffer writeData:ByteHeader];
+    [_liveEncodedBuffer writeData:pps];
 }
 
-- (void)gotEncodedData:(NSData*)data isKeyFrame:(BOOL)isKeyFrame
+- (void)inmemEncodedData:(NSData*)data isKeyFrame:(BOOL)isKeyFrame
 {
-    //NSLog(@"gotEncodedData %d", (int)[data length]);
-    if (fileHandle != NULL)
-    {
-        const char bytes[] = "\x00\x00\x00\x01";
-        size_t length = (sizeof bytes) - 1;//string literals have implicit trailing '\0'
-        NSData *ByteHeader = [NSData dataWithBytes:bytes length:length];
-        [fileHandle writeData:ByteHeader];
-        [fileHandle writeData:data];
-    }
+    const char bytes[] = "\x00\x00\x00\x01";
+    size_t length = (sizeof bytes) - 1;//string literals have implicit trailing '\0'
+    NSData *ByteHeader = [NSData dataWithBytes:bytes length:length];
+    [_liveEncodedBuffer writeData:ByteHeader];
+    [_liveEncodedBuffer writeData:data];
 }
 
 #pragma mark - sample buffer processing
-
 // convert CoreVideo YUV pixel buffer (Y luminance and Cb Cr chroma) into RGB
 // processing is done on the GPU, operation WAY more efficient than converting on the CPU
 - (void)_processSampleBuffer:(CMSampleBufferRef)sampleBuffer
@@ -2996,6 +2989,11 @@ typedef void (^PBJVisionBlock)();
     if ([EAGLContext currentContext] == _context) {
         [EAGLContext setCurrentContext:nil];
     }
+}
+
+- (CBCircularData*)getLiveInmemBufferWithOffset:(NSUInteger*)out_offset {
+    *out_offset = _liveEncodedBufferOffset;
+    return _liveEncodedBuffer;
 }
 
 @end
