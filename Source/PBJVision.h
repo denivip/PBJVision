@@ -247,7 +247,6 @@ static CGFloat const PBJVideoBitRate1280x750 = 5000000 * 8;
 - (void)captureCurrentVideoThumbnail;
 - (void)captureVideoThumbnailAtFrame:(int64_t)frame;
 - (void)captureVideoThumbnailAtTime:(Float64)seconds;
-- (CBCircularData*)getLiveInmemBufferWithOffset:(NSUInteger*)out_offset;
 @end
 
 @protocol PBJVisionDelegate <NSObject>
@@ -317,4 +316,7 @@ static CGFloat const PBJVideoBitRate1280x750 = 5000000 * 8;
 - (void)vision:(PBJVision *)vision didCaptureVideoSampleBuffer:(CMSampleBufferRef)sampleBuffer;
 - (void)vision:(PBJVision *)vision didCaptureAudioSample:(CMSampleBufferRef)sampleBuffer;
 - (void)vision:(PBJVision *)vision didCaptureSampleHandled:(CMSampleBufferRef)sampleBuffer;
+
+// inmem encoding
+- (BOOL)vision:(PBJVision *)vision canFlushInmemVideo:(CBCircularData *)video andAudio:(CBCircularData *)audio;
 @end

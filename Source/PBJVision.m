@@ -170,11 +170,8 @@ typedef NS_ENUM(GLint, PBJVisionUniformLocationTypes)
     CVOpenGLESTextureCacheRef _videoTextureCache;
     
     CIContext *_ciContext;
-    CBCircularData *_liveEncodedBuffer;
-    NSUInteger _liveEncodedBufferOffset;
     
     // flags
-    
     struct {
         unsigned int previewRunning:1;
         unsigned int changingModes:1;
@@ -195,6 +192,11 @@ typedef NS_ENUM(GLint, PBJVisionUniformLocationTypes)
 
 @property (nonatomic) AVCaptureDevice *currentDevice;
 @property (strong, nonatomic) NSMutableArray* skippedBuffers;
+
+
+@property (strong, nonatomic) CBCircularData *liveVideoH264Buffer;
+@property (strong, nonatomic) CBCircularData *liveAudioAACBuffer;
+
 @end
 
 @implementation PBJVision
@@ -793,8 +795,9 @@ typedef NS_ENUM(GLint, PBJVisionUniformLocationTypes)
             DLog(@"failed to create GL context");
         }
         [self _setupGL];
-        _liveEncodedBuffer = [[CBCircularData alloc] initWithDepth:PBJVisionInmemBufferMb*1000000];
-        _liveEncodedBufferOffset = 0;
+        self.liveVideoH264Buffer = [[CBCircularData alloc] initWithDepth:PBJVisionInmemBufferMb*2*1000000];
+        self.liveAudioAACBuffer = [[CBCircularData alloc] initWithDepth:PBJVisionInmemBufferMb*2*1000000];
+
         _captureSessionPreset = AVCaptureSessionPresetMedium;
         _captureDirectory = nil;
 
@@ -2761,34 +2764,54 @@ typedef void (^PBJVisionBlock)();
     //[[NSFileManager defaultManager] createFileAtPath:[ou path] contents:[NSData new] attributes:nil];
     //fileHandle = [NSFileHandle fileHandleForWritingToURL:ou error:&error];
     //NSLog(@"Creating output handle: %@ error: %@", fileHandle, error);
-    [_liveEncodedBuffer removeAll];
+    [self.liveVideoH264Buffer removeAll];
+    [self.liveAudioAACBuffer removeAll];
 }
 
 - (void)inmemEncodeStop
 {
     //[fileHandle closeFile];
     //fileHandle = NULL;
-    [_liveEncodedBuffer removeAll];
+    [self.liveVideoH264Buffer removeAll];
+    [self.liveAudioAACBuffer removeAll];
 }
+
 
 - (void)inmemSpsPps:(NSData*)sps pps:(NSData*)pps
 {
     const char bytes[] = "\x00\x00\x00\x01";
     size_t length = (sizeof bytes) - 1;//string literals have implicit trailing '\0'
     NSData *ByteHeader = [NSData dataWithBytes:bytes length:length];
-    _liveEncodedBufferOffset = [_liveEncodedBuffer writeData:ByteHeader];
-    [_liveEncodedBuffer writeData:sps];
-    [_liveEncodedBuffer writeData:ByteHeader];
-    [_liveEncodedBuffer writeData:pps];
+    //_liveEncodedTsBufferOffset =
+    [self.liveVideoH264Buffer writeData:ByteHeader];
+    [self.liveVideoH264Buffer writeData:sps];
+    [self.liveVideoH264Buffer writeData:ByteHeader];
+    [self.liveVideoH264Buffer writeData:pps];
 }
 
-- (void)inmemEncodedData:(NSData*)data isKeyFrame:(BOOL)isKeyFrame
+- (void)inmemEncodedVideoData:(NSData*)data isKeyFrame:(BOOL)isKeyFrame
 {
+    if(isKeyFrame){
+        [self inmemCheckTsFlush];
+    }
     const char bytes[] = "\x00\x00\x00\x01";
     size_t length = (sizeof bytes) - 1;//string literals have implicit trailing '\0'
     NSData *ByteHeader = [NSData dataWithBytes:bytes length:length];
-    [_liveEncodedBuffer writeData:ByteHeader];
-    [_liveEncodedBuffer writeData:data];
+    [self.liveVideoH264Buffer writeData:ByteHeader];
+    [self.liveVideoH264Buffer writeData:data];
+}
+
+- (void)inmemEncodedAudioData:(NSData*)data
+{
+    [self.liveAudioAACBuffer writeData:data];
+}
+
+- (void)inmemCheckTsFlush
+{
+    if([self.delegate vision:self canFlushInmemVideo:self.liveVideoH264Buffer andAudio:self.liveAudioAACBuffer]){
+        self.liveVideoH264Buffer = [[CBCircularData alloc] initWithDepth:PBJVisionInmemBufferMb*2*1000000];
+        self.liveAudioAACBuffer = [[CBCircularData alloc] initWithDepth:PBJVisionInmemBufferMb*2*1000000];
+    }
 }
 
 #pragma mark - sample buffer processing
@@ -2989,11 +3012,6 @@ typedef void (^PBJVisionBlock)();
     if ([EAGLContext currentContext] == _context) {
         [EAGLContext setCurrentContext:nil];
     }
-}
-
-- (CBCircularData*)getLiveInmemBufferWithOffset:(NSUInteger*)out_offset {
-    *out_offset = _liveEncodedBufferOffset;
-    return _liveEncodedBuffer;
 }
 
 @end

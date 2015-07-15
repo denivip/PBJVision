@@ -11,6 +11,10 @@
 
 @interface CBCircularData()
 @property (strong) NSDate* lastUpdated;
+@property (strong) NSMutableArray* buffers;
+@property (assign) NSUInteger baseOffset;
+@property (assign) NSUInteger maxTotalSize;
+@property (assign) NSUInteger curTotalSize;
 @end
 
 @implementation CBCircularData
@@ -33,6 +37,18 @@
         self.curTotalSize = 0;
         self.baseOffset = 0;
     }
+}
+
+- (NSUInteger)size {
+    return self.curTotalSize;
+}
+
+- (NSUInteger)sizecap {
+    return self.maxTotalSize;
+}
+
+- (NSUInteger)lowoffset {
+    return self.baseOffset;
 }
 
 - (NSUInteger)writeData:(NSData*)dt {

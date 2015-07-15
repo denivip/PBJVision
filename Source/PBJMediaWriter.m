@@ -347,7 +347,17 @@
 
     if(inmemEncoding == PBJInmemEncodingExclusive){
         if(video){
-            [h264enc encode:sampleBuffer];
+            if(isVideoMuted){
+                [self muteAudioVideoInBuffer:sampleBuffer];
+            }
+            [h264enc encodeVideo:sampleBuffer];
+        }else{
+            if(isAudioMuted){
+                [self muteAudioVideoInBuffer:sampleBuffer];
+            }
+            // sampleBuffer contains encoded aac samples
+            // AVFormatIDKey -> kAudioFormatMPEG4AAC
+            [h264enc encodeAudio:sampleBuffer];
         }
         return;
     }

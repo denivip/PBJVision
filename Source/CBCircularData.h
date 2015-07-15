@@ -9,16 +9,14 @@
 #ifndef mstreamer_CBCircularData_h
 #define mstreamer_CBCircularData_h
 @interface CBCircularData : NSObject
-@property (strong) NSMutableArray* buffers;
-@property (assign) NSUInteger baseOffset;
-@property (assign) NSUInteger maxTotalSize;
-@property (assign) NSUInteger curTotalSize;
 
 - (instancetype)initWithDepth:(NSUInteger)maxBytes;
 - (NSData*)readData:(NSUInteger)offset length:(NSInteger)len;
 - (NSUInteger)writeData:(NSData*)dt;
 - (void)removeAll;
 - (NSDate*)getLastModified;
-
+- (NSUInteger)size;
+- (NSUInteger)sizecap;
+- (NSUInteger)lowoffset;
 @end
 #endif
