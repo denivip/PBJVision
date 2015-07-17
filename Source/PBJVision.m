@@ -2329,7 +2329,8 @@ typedef void (^PBJVisionBlock)();
 
 - (void)captureOutput:(AVCaptureOutput *)captureOutput didOutputSampleBuffer:(CMSampleBufferRef)sampleBuffer fromConnection:(AVCaptureConnection *)connection
 {
-    //DLog("%@: received new buffer, %p", _mediaWriter, sampleBuffer);
+    BOOL isVideo = (captureOutput == _captureOutputVideo);
+    NSLog(@"%@: received new buffer isVideo=%i, %p", _mediaWriter, isVideo, sampleBuffer);// inmemEncodedAudioData
 	CFRetain(sampleBuffer);
     
     if (!CMSampleBufferDataIsReady(sampleBuffer)) {
@@ -2338,7 +2339,6 @@ typedef void (^PBJVisionBlock)();
         return;
     }
 
-    BOOL isVideo = (captureOutput == _captureOutputVideo);
     if (_flags.isWaitingForWriter){
         [self saveBufferForWriter:sampleBuffer isVideo:isVideo];
         // CFRelease(sampleBuffer);// not releasing
@@ -2486,17 +2486,19 @@ typedef void (^PBJVisionBlock)();
             CFRelease(bufferToWrite);
         }];
         
-    } else if (!isVideo && _flags.videoWritten) {
-        //DLog("%@: trying to write audio buffer, %p", _mediaWriter, sampleBuffer);
-        [_mediaWriter writeSampleBuffer:bufferToWrite withMediaTypeVideo:isVideo];
-        
-        CFRetain(bufferToWrite);
-        [self _enqueueBlockOnMainQueue:^{
-            if ([_delegate respondsToSelector:@selector(vision:didCaptureAudioSample:)]) {
-                [_delegate vision:self didCaptureAudioSample:bufferToWrite];
-            }
-            CFRelease(bufferToWrite);
-        }];
+    } else if (!isVideo){
+        if (_flags.videoWritten) {
+            //DLog("%@: trying to write audio buffer, %p", _mediaWriter, sampleBuffer);
+            [_mediaWriter writeSampleBuffer:bufferToWrite withMediaTypeVideo:isVideo];
+            
+            CFRetain(bufferToWrite);
+            [self _enqueueBlockOnMainQueue:^{
+                if ([_delegate respondsToSelector:@selector(vision:didCaptureAudioSample:)]) {
+                    [_delegate vision:self didCaptureAudioSample:bufferToWrite];
+                }
+                CFRelease(bufferToWrite);
+            }];
+        }
     }
 }
 
@@ -2779,6 +2781,8 @@ typedef void (^PBJVisionBlock)();
 
 - (void)inmemSpsPps:(NSData*)sps pps:(NSData*)pps
 {
+    [self inmemCheckTsFlush];
+
     const char bytes[] = "\x00\x00\x00\x01";
     size_t length = (sizeof bytes) - 1;//string literals have implicit trailing '\0'
     NSData *ByteHeader = [NSData dataWithBytes:bytes length:length];
@@ -2797,9 +2801,6 @@ typedef void (^PBJVisionBlock)();
 
 - (void)inmemEncodedVideoData:(NSData*)data isKeyFrame:(BOOL)isKeyFrame
 {
-    if(isKeyFrame){
-        [self inmemCheckTsFlush];
-    }
     const char bytes[] = "\x00\x00\x00\x01";
     size_t length = (sizeof bytes) - 1;//string literals have implicit trailing '\0'
     NSData *ByteHeader = [NSData dataWithBytes:bytes length:length];
