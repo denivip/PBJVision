@@ -47,7 +47,7 @@ NSString * const PBJVisionErrorDomain = @"PBJVisionErrorDomain";
 
 static uint64_t const PBJVisionRequiredMinimumDiskSpaceInBytes = 49999872; // ~ 47 MB
 static CGFloat const PBJVisionThumbnailWidth = 160.0f;
-static uint64_t const PBJVisionInmemBufferMb = 1;
+static uint64_t const PBJVisionInmemBufferMb = 2;
 
 // KVO contexts
 
@@ -795,8 +795,8 @@ typedef NS_ENUM(GLint, PBJVisionUniformLocationTypes)
             DLog(@"failed to create GL context");
         }
         [self _setupGL];
-        self.liveVideoH264Buffer = [[CBCircularData alloc] initWithDepth:PBJVisionInmemBufferMb*2*1000000];
-        self.liveAudioAACBuffer = [[CBCircularData alloc] initWithDepth:PBJVisionInmemBufferMb*2*1000000];
+        self.liveVideoH264Buffer = [[CBCircularData alloc] initWithDepth:PBJVisionInmemBufferMb*1000000];
+        self.liveAudioAACBuffer = [[CBCircularData alloc] initWithDepth:PBJVisionInmemBufferMb*1000000];
 
         _captureSessionPreset = AVCaptureSessionPresetMedium;
         _captureDirectory = nil;
@@ -2782,11 +2782,17 @@ typedef void (^PBJVisionBlock)();
     const char bytes[] = "\x00\x00\x00\x01";
     size_t length = (sizeof bytes) - 1;//string literals have implicit trailing '\0'
     NSData *ByteHeader = [NSData dataWithBytes:bytes length:length];
-    //_liveEncodedTsBufferOffset =
-    [self.liveVideoH264Buffer writeData:ByteHeader];
-    [self.liveVideoH264Buffer writeData:sps];
-    [self.liveVideoH264Buffer writeData:ByteHeader];
-    [self.liveVideoH264Buffer writeData:pps];
+    NSMutableData *line1 = [NSMutableData data];
+    [line1 appendData:ByteHeader];
+    [line1 appendData:sps];
+    //NSLog(@"inmem HAL sps: %@", sps);
+    [self.liveVideoH264Buffer writeData:line1];
+    
+    NSMutableData *line2 = [NSMutableData data];
+    [line2 appendData:ByteHeader];
+    [line2 appendData:pps];
+    //NSLog(@"inmem HAL pps: %@", pps);
+    [self.liveVideoH264Buffer writeData:line2];
 }
 
 - (void)inmemEncodedVideoData:(NSData*)data isKeyFrame:(BOOL)isKeyFrame
@@ -2797,8 +2803,11 @@ typedef void (^PBJVisionBlock)();
     const char bytes[] = "\x00\x00\x00\x01";
     size_t length = (sizeof bytes) - 1;//string literals have implicit trailing '\0'
     NSData *ByteHeader = [NSData dataWithBytes:bytes length:length];
-    [self.liveVideoH264Buffer writeData:ByteHeader];
-    [self.liveVideoH264Buffer writeData:data];
+    NSMutableData *line3 = [NSMutableData data];
+    [line3 appendData:ByteHeader];
+    [line3 appendData:data];
+    //NSLog(@"inmem HAL data: %@", data);
+    [self.liveVideoH264Buffer writeData:line3];
 }
 
 - (void)inmemEncodedAudioData:(NSData*)data
@@ -2809,8 +2818,8 @@ typedef void (^PBJVisionBlock)();
 - (void)inmemCheckTsFlush
 {
     if([self.delegate vision:self canFlushInmemVideo:self.liveVideoH264Buffer andAudio:self.liveAudioAACBuffer]){
-        self.liveVideoH264Buffer = [[CBCircularData alloc] initWithDepth:PBJVisionInmemBufferMb*2*1000000];
-        self.liveAudioAACBuffer = [[CBCircularData alloc] initWithDepth:PBJVisionInmemBufferMb*2*1000000];
+        self.liveVideoH264Buffer = [[CBCircularData alloc] initWithDepth:PBJVisionInmemBufferMb*1000000];
+        self.liveAudioAACBuffer = [[CBCircularData alloc] initWithDepth:PBJVisionInmemBufferMb*1000000];
     }
 }
 

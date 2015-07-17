@@ -43,12 +43,16 @@
     return self.curTotalSize;
 }
 
-- (NSUInteger)sizecap {
+- (NSUInteger)sizeCap {
     return self.maxTotalSize;
 }
 
-- (NSUInteger)lowoffset {
+- (NSUInteger)lowOffset {
     return self.baseOffset;
+}
+
+- (NSArray*)dataBuffers {
+    return self.buffers;
 }
 
 - (NSUInteger)writeData:(NSData*)dt {

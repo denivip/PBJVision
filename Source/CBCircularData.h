@@ -16,7 +16,8 @@
 - (void)removeAll;
 - (NSDate*)getLastModified;
 - (NSUInteger)size;
-- (NSUInteger)sizecap;
-- (NSUInteger)lowoffset;
+- (NSUInteger)sizeCap;
+- (NSUInteger)lowOffset;
+- (NSArray*)dataBuffers;
 @end
 #endif
