@@ -69,25 +69,29 @@
 }
 - (BOOL)isAudioReady
 {
+    if(inmemEncoding == PBJInmemEncodingExclusive && h264enc.isActive == 0){
+        return NO;
+    }
+    if(inmemEncoding != PBJInmemEncodingExclusive && _assetWriterAudioInput != nil){
+        return YES;
+    }
     AVAuthorizationStatus audioAuthorizationStatus = [AVCaptureDevice authorizationStatusForMediaType:AVMediaTypeAudio];
     BOOL isAudioNotAuthorized = (audioAuthorizationStatus == AVAuthorizationStatusNotDetermined || audioAuthorizationStatus == AVAuthorizationStatusDenied);
     BOOL isAudioSetup = !isAudioNotAuthorized;
-    if(inmemEncoding != PBJInmemEncodingExclusive){
-        isAudioSetup = (_assetWriterAudioInput != nil) || isAudioNotAuthorized;
-    }
     return isAudioSetup;
 }
 
 - (BOOL)isVideoReady
 {
+    if(inmemEncoding == PBJInmemEncodingExclusive && h264enc.isActive == 0){
+        return NO;
+    }
+    if(inmemEncoding != PBJInmemEncodingExclusive && _assetWriterVideoInput != nil){
+        return YES;
+    }
     AVAuthorizationStatus videoAuthorizationStatus = [AVCaptureDevice authorizationStatusForMediaType:AVMediaTypeVideo];
     BOOL isVideoNotAuthorized = (videoAuthorizationStatus == AVAuthorizationStatusNotDetermined || videoAuthorizationStatus == AVAuthorizationStatusDenied);
     BOOL isVideoSetup = !isVideoNotAuthorized;
-    if(inmemEncoding != PBJInmemEncodingExclusive){
-        isVideoSetup = (_assetWriterVideoInput != nil) || isVideoNotAuthorized;
-    }else{
-        isVideoSetup =  !isVideoNotAuthorized && (h264enc.isActive > 0);
-    }
     return isVideoSetup;
 }
 
@@ -184,6 +188,8 @@
 - (BOOL)setupAudioWithSettings:(NSDictionary *)audioSettings
 {
     if(inmemEncoding == PBJInmemEncodingExclusive){
+        h264enc.audioSettings = audioSettings;
+        [h264enc setupEncoding];
         return YES;
     }
 	if (!_assetWriterAudioInput && [_assetWriter canApplyOutputSettings:audioSettings forMediaType:AVMediaTypeAudio]) {
@@ -216,7 +222,8 @@
 - (BOOL)setupVideoWithSettings:(NSDictionary *)videoSettings
 {
     if(inmemEncoding == PBJInmemEncodingExclusive){
-        [h264enc initEncode:[[videoSettings objectForKey:AVVideoWidthKey] intValue] height:[[videoSettings objectForKey:AVVideoHeightKey] intValue]];
+        h264enc.videoSettings = videoSettings;
+        [h264enc setupEncoding];
         return YES;
     }
 	if (!_assetWriterVideoInput && [_assetWriter canApplyOutputSettings:videoSettings forMediaType:AVMediaTypeVideo]) {

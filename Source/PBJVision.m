@@ -2330,7 +2330,6 @@ typedef void (^PBJVisionBlock)();
 - (void)captureOutput:(AVCaptureOutput *)captureOutput didOutputSampleBuffer:(CMSampleBufferRef)sampleBuffer fromConnection:(AVCaptureConnection *)connection
 {
     BOOL isVideo = (captureOutput == _captureOutputVideo);
-    NSLog(@"%@: received new buffer isVideo=%i, %p", _mediaWriter, isVideo, sampleBuffer);// inmemEncodedAudioData
 	CFRetain(sampleBuffer);
     
     if (!CMSampleBufferDataIsReady(sampleBuffer)) {
@@ -2373,6 +2372,7 @@ typedef void (^PBJVisionBlock)();
         return;
     }
     
+    //NSLog(@"%@: received new CMSampleBufferRef, isVideo=%i, %p", _mediaWriter, isVideo, sampleBuffer);
     CMTime currentTimestamp = CMSampleBufferGetPresentationTimeStamp(sampleBuffer);
     // calculate the length of the interruption and store the offsets
     if (_flags.interrupted) {
