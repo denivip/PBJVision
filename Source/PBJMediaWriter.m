@@ -101,7 +101,6 @@
 }
 
 #pragma mark - init
-
 - (id)initWithOutputURL:(NSURL *)outputURL format:(NSString*)format inmem:(PBJInmemEncoding)inmemEnc
 {
     self = [super init];
@@ -447,13 +446,21 @@
     [_assetWriter startSessionAtSourceTime:timestamp];
 }
 
+- (void)finalize
+{
+    if(h264enc){
+        [h264enc stopEncoding];
+        h264enc = nil;
+    }
+}
+
 - (void)finalizeWriting
 {
     if(CMTIME_IS_INVALID(_videoTimestamp)){
         return;
     }
     if(inmemEncoding == PBJInmemEncodingExclusive){
-        [h264enc stopEncode];
+        [h264enc stopEncoding];
         return;
     }
     [_assetWriter endSessionAtSourceTime:_videoTimestamp];
@@ -475,7 +482,7 @@
         DLog(@"%@: asset writer is in an unknown state, wasn't recording", self);
         return;
     }
-    if(![self canBeFinalized]){
+    if(inmemEncoding != PBJInmemEncodingExclusive && ![self canBeFinalized]){
         // Nothing to save
         DLog(@"%@: asset writer recorded nothing", self);
         return;

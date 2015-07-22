@@ -795,8 +795,7 @@ typedef NS_ENUM(GLint, PBJVisionUniformLocationTypes)
             DLog(@"failed to create GL context");
         }
         [self _setupGL];
-        self.liveVideoH264Buffer = [[CBCircularData alloc] initWithDepth:PBJVisionInmemBufferMb*1000000];
-        self.liveAudioAACBuffer = [[CBCircularData alloc] initWithDepth:PBJVisionInmemBufferMb*1000000];
+        [self inmemResetEncoders];
 
         _captureSessionPreset = AVCaptureSessionPresetMedium;
         _captureDirectory = nil;
@@ -843,6 +842,10 @@ typedef NS_ENUM(GLint, PBJVisionUniformLocationTypes)
     [[NSNotificationCenter defaultCenter] removeObserver:self];
     _delegate = nil;
 
+    [_mediaWriter finalize];
+    _mediaWriter.delegate = nil;
+    _mediaWriter = nil;
+    
     [self _cleanUpTextures];
     
     if (_videoTextureCache) {
@@ -1936,6 +1939,7 @@ typedef void (^PBJVisionBlock)();
     }
     
     if (_mediaWriter) {
+        [_mediaWriter finalize];
         _mediaWriter.delegate = nil;
         _mediaWriter = nil;
     }
@@ -2113,7 +2117,6 @@ typedef void (^PBJVisionBlock)();
 - (void)cancelVideoCapture
 {
     DLog(@"cancel video capture");
-    
     [self _enqueueBlockOnCaptureVideoQueue:^{
         _flags.recording = NO;
         _flags.paused = NO;
@@ -2326,7 +2329,6 @@ typedef void (^PBJVisionBlock)();
 }
 
 #pragma mark - AVCaptureAudioDataOutputSampleBufferDelegate, AVCaptureVideoDataOutputSampleBufferDelegate
-
 - (void)captureOutput:(AVCaptureOutput *)captureOutput didOutputSampleBuffer:(CMSampleBufferRef)sampleBuffer fromConnection:(AVCaptureConnection *)connection
 {
     BOOL isVideo = (captureOutput == _captureOutputVideo);
@@ -2766,16 +2768,14 @@ typedef void (^PBJVisionBlock)();
     //[[NSFileManager defaultManager] createFileAtPath:[ou path] contents:[NSData new] attributes:nil];
     //fileHandle = [NSFileHandle fileHandleForWritingToURL:ou error:&error];
     //NSLog(@"Creating output handle: %@ error: %@", fileHandle, error);
-    [self.liveVideoH264Buffer removeAll];
-    [self.liveAudioAACBuffer removeAll];
+    [self inmemResetEncoders];
 }
 
 - (void)inmemEncodeStop
 {
     //[fileHandle closeFile];
     //fileHandle = NULL;
-    [self.liveVideoH264Buffer removeAll];
-    [self.liveAudioAACBuffer removeAll];
+    [self inmemResetEncoders];
 }
 
 
@@ -2816,11 +2816,20 @@ typedef void (^PBJVisionBlock)();
     [self.liveAudioAACBuffer writeData:data];
 }
 
+- (void)inmemResetEncoders
+{
+    if(self.liveVideoH264Buffer == nil || self.liveAudioAACBuffer == nil){
+        self.liveVideoH264Buffer = [[CBCircularData alloc] initWithDepth:PBJVisionInmemBufferMb*1000000];
+        self.liveAudioAACBuffer = [[CBCircularData alloc] initWithDepth:PBJVisionInmemBufferMb*1000000];
+    }
+    [self.liveVideoH264Buffer removeAll];
+    [self.liveAudioAACBuffer removeAll];
+}
+
 - (void)inmemCheckTsFlush
 {
     if([self.delegate vision:self canFlushInmemVideo:self.liveVideoH264Buffer andAudio:self.liveAudioAACBuffer]){
-        self.liveVideoH264Buffer = [[CBCircularData alloc] initWithDepth:PBJVisionInmemBufferMb*1000000];
-        self.liveAudioAACBuffer = [[CBCircularData alloc] initWithDepth:PBJVisionInmemBufferMb*1000000];
+        [self inmemResetEncoders];
     }
 }
 
