@@ -2778,11 +2778,13 @@ typedef void (^PBJVisionBlock)();
     [self inmemResetEncoders];
 }
 
+- (void)inmemOnIFrame
+{
+    [self inmemCheckTsFlush];
+}
 
 - (void)inmemSpsPps:(NSData*)sps pps:(NSData*)pps
 {
-    [self inmemCheckTsFlush];
-
     const char bytes[] = "\x00\x00\x00\x01";
     size_t length = (sizeof bytes) - 1;//string literals have implicit trailing '\0'
     NSData *ByteHeader = [NSData dataWithBytes:bytes length:length];
@@ -2818,6 +2820,7 @@ typedef void (^PBJVisionBlock)();
 
 - (void)inmemResetEncoders
 {
+    //NSLog(@"Frame: RESETTING BUFFERS");
     if(self.liveVideoH264Buffer == nil || self.liveAudioAACBuffer == nil){
         self.liveVideoH264Buffer = [[CBCircularData alloc] initWithDepth:PBJVisionInmemBufferMb*1000000];
         self.liveAudioAACBuffer = [[CBCircularData alloc] initWithDepth:PBJVisionInmemBufferMb*1000000];
