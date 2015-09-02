@@ -26,9 +26,9 @@
 #import <Foundation/Foundation.h>
 #import <AVFoundation/AVFoundation.h>
 #import "PBJMediaWriter.h"
+#import "CBCircularData.h"
 
 // vision types
-
 typedef NS_ENUM(NSInteger, PBJCameraDevice) {
     PBJCameraDeviceBack = 0,
     PBJCameraDeviceFront
@@ -318,5 +318,5 @@ static CGFloat const PBJVideoBitRate1280x750 = 5000000 * 8;
 - (void)vision:(PBJVision *)vision didCaptureSampleHandled:(CMSampleBufferRef)sampleBuffer;
 
 // inmem encoding
-- (BOOL)vision:(PBJVision *)vision canFlushInmemVideo:(CBCircularData *)video andAudio:(CBCircularData *)audio;
+- (BOOL)vision:(PBJVision *)vision canFlushInmemVideo:(CBCircularData *)video andAudio:(CBCircularData *)audio withSps:(NSData*)sps withPps:(NSData*)pps;
 @end

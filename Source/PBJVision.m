@@ -193,7 +193,8 @@ typedef NS_ENUM(GLint, PBJVisionUniformLocationTypes)
 @property (nonatomic) AVCaptureDevice *currentDevice;
 @property (strong, nonatomic) NSMutableArray* skippedBuffers;
 
-
+@property (strong, nonatomic) NSData *liveVideoSps;
+@property (strong, nonatomic) NSData *liveVideoPps;
 @property (strong, nonatomic) CBCircularData *liveVideoH264Buffer;
 @property (strong, nonatomic) CBCircularData *liveAudioAACBuffer;
 
@@ -2778,11 +2779,6 @@ typedef void (^PBJVisionBlock)();
     [self inmemResetEncoders];
 }
 
-- (void)inmemOnIFrame
-{
-    [self inmemCheckTsFlush];
-}
-
 - (void)inmemSpsPps:(NSData*)sps pps:(NSData*)pps
 {
     const char nalHeadrBytes[] = "\x00\x00\x00\x01";
@@ -2792,13 +2788,15 @@ typedef void (^PBJVisionBlock)();
     [line1 appendData:ByteHeader];
     [line1 appendData:sps];
     //NSLog(@"inmem HAL sps: %@", sps);
-    [self.liveVideoH264Buffer writeData:line1];
+    //[self.liveVideoH264Buffer writeData:line1];
+    self.liveVideoSps = line1;
     
     NSMutableData *line2 = [NSMutableData data];
     [line2 appendData:ByteHeader];
     [line2 appendData:pps];
     //NSLog(@"inmem HAL pps: %@", pps);
-    [self.liveVideoH264Buffer writeData:line2];
+    //[self.liveVideoH264Buffer writeData:line2];
+    self.liveVideoPps = line2;
 }
 
 - (void)inmemEncodedVideoData:(NSData*)data isKeyFrame:(BOOL)isKeyFrame
@@ -2829,11 +2827,13 @@ typedef void (^PBJVisionBlock)();
     }
     [self.liveVideoH264Buffer removeAll];
     [self.liveAudioAACBuffer removeAll];
+    self.liveVideoSps = nil;
+    self.liveVideoPps = nil;
 }
 
-- (void)inmemCheckTsFlush
+- (void)inmemOnIFrame
 {
-    if([self.delegate vision:self canFlushInmemVideo:self.liveVideoH264Buffer andAudio:self.liveAudioAACBuffer]){
+    if([self.delegate vision:self canFlushInmemVideo:self.liveVideoH264Buffer andAudio:self.liveAudioAACBuffer withSps:self.liveVideoSps withPps:self.liveVideoPps]){
         [self inmemResetEncoders];
     }
 }
