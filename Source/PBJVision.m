@@ -796,7 +796,7 @@ typedef NS_ENUM(GLint, PBJVisionUniformLocationTypes)
             DLog(@"failed to create GL context");
         }
         [self _setupGL];
-        [self inmemResetEncoders];
+        [self inmemResetEncoders:YES];
 
         _captureSessionPreset = AVCaptureSessionPresetMedium;
         _captureDirectory = nil;
@@ -2769,48 +2769,48 @@ typedef void (^PBJVisionBlock)();
     //[[NSFileManager defaultManager] createFileAtPath:[ou path] contents:[NSData new] attributes:nil];
     //fileHandle = [NSFileHandle fileHandleForWritingToURL:ou error:&error];
     //NSLog(@"Creating output handle: %@ error: %@", fileHandle, error);
-    [self inmemResetEncoders];
+    [self inmemResetEncoders:YES];
 }
 
 - (void)inmemEncodeStop
 {
     //[fileHandle closeFile];
     //fileHandle = NULL;
-    [self inmemResetEncoders];
+    [self inmemResetEncoders:YES];
 }
 
 - (void)inmemSpsPps:(NSData*)sps pps:(NSData*)pps
 {
-    const char nalHeadrBytes[] = "\x00\x00\x00\x01";
-    size_t length = (sizeof nalHeadrBytes) - 1;//string literals have implicit trailing '\0'
-    NSData *ByteHeader = [NSData dataWithBytes:nalHeadrBytes length:length];
-    NSMutableData *line1 = [NSMutableData data];
-    [line1 appendData:ByteHeader];
-    [line1 appendData:sps];
+    //const char nalHeadrBytes[] = "\x00\x00\x00\x01";
+    //size_t length = (sizeof nalHeadrBytes) - 1;//string literals have implicit trailing '\0'
+    //NSData *ByteHeader = [NSData dataWithBytes:nalHeadrBytes length:length];
+    //NSMutableData *line1 = [NSMutableData data];
+    //[line1 appendData:ByteHeader];
+    //[line1 appendData:sps];
     //NSLog(@"inmem HAL sps: %@", sps);
     //[self.liveVideoH264Buffer writeData:line1];
-    self.liveVideoSps = line1;
+    self.liveVideoSps = sps;//line1;
     
-    NSMutableData *line2 = [NSMutableData data];
-    [line2 appendData:ByteHeader];
-    [line2 appendData:pps];
+    //NSMutableData *line2 = [NSMutableData data];
+    //[line2 appendData:ByteHeader];
+    //[line2 appendData:pps];
     //NSLog(@"inmem HAL pps: %@", pps);
     //[self.liveVideoH264Buffer writeData:line2];
-    self.liveVideoPps = line2;
+    self.liveVideoPps = pps;//line2;
 }
 
 - (void)inmemEncodedVideoData:(NSData*)data isKeyFrame:(BOOL)isKeyFrame
 {
-    const char nalHeadrBytes[] = "\x00\x00\x00\x01";
-    size_t length = (sizeof nalHeadrBytes) - 1;//string literals have implicit trailing '\0'
-    NSData *ByteHeader = [NSData dataWithBytes:nalHeadrBytes length:length];
-    NSMutableData *line3 = [NSMutableData data];
-    [line3 appendData:ByteHeader];
-    [line3 appendData:data];
+    //const char nalHeadrBytes[] = "\x00\x00\x00\x01";
+    //size_t length = (sizeof nalHeadrBytes) - 1;//string literals have implicit trailing '\0'
+    //NSData *ByteHeader = [NSData dataWithBytes:nalHeadrBytes length:length];
+    //NSMutableData *line3 = [NSMutableData data];
+    //[line3 appendData:ByteHeader];
+    //[line3 appendData:data];
     //Byte* p = (Byte*)data.bytes;
     //int nalType = (p[0] & 0x1f);
     //NSLog(@"inmem HAL data: nalType=%i, %@", nalType, data);
-    [self.liveVideoH264Buffer writeData:line3];
+    [self.liveVideoH264Buffer writeData:data];//line3];
 }
 
 - (void)inmemEncodedAudioData:(NSData*)data
@@ -2818,7 +2818,7 @@ typedef void (^PBJVisionBlock)();
     [self.liveAudioAACBuffer writeData:data];
 }
 
-- (void)inmemResetEncoders
+- (void)inmemResetEncoders:(BOOL)totally
 {
     //NSLog(@"Frame: RESETTING BUFFERS");
     if(self.liveVideoH264Buffer == nil || self.liveAudioAACBuffer == nil){
@@ -2827,14 +2827,16 @@ typedef void (^PBJVisionBlock)();
     }
     [self.liveVideoH264Buffer removeAll];
     [self.liveAudioAACBuffer removeAll];
-    self.liveVideoSps = nil;
-    self.liveVideoPps = nil;
+    if(totally){
+        self.liveVideoSps = nil;
+        self.liveVideoPps = nil;
+    }
 }
 
 - (void)inmemOnIFrame
 {
     if([self.delegate vision:self canFlushInmemVideo:self.liveVideoH264Buffer andAudio:self.liveAudioAACBuffer withSps:self.liveVideoSps withPps:self.liveVideoPps]){
-        [self inmemResetEncoders];
+        [self inmemResetEncoders:NO];
     }
 }
 
