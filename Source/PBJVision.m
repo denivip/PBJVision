@@ -197,7 +197,7 @@ typedef NS_ENUM(GLint, PBJVisionUniformLocationTypes)
 @property (strong, nonatomic) NSData *liveVideoPps;
 @property (strong, nonatomic) CBCircularData *liveVideoH264Buffer;
 @property (strong, nonatomic) CBCircularData *liveAudioAACBuffer;
-
+@property (assign) int liveIFrameReceived;
 @end
 
 @implementation PBJVision
@@ -2799,23 +2799,47 @@ typedef void (^PBJVisionBlock)();
     self.liveVideoPps = pps;//line2;
 }
 
-- (void)inmemEncodedVideoData:(NSData*)data isKeyFrame:(BOOL)isKeyFrame
+- (void)inmemEncodedVideoData:(NSData*)data withPts:(double)pts isKeyFrame:(BOOL)isKeyFrame
 {
+    if(self.liveIFrameReceived < 1){
+        return;
+    }
+    
     //const char nalHeadrBytes[] = "\x00\x00\x00\x01";
     //size_t length = (sizeof nalHeadrBytes) - 1;//string literals have implicit trailing '\0'
     //NSData *ByteHeader = [NSData dataWithBytes:nalHeadrBytes length:length];
     //NSMutableData *line3 = [NSMutableData data];
     //[line3 appendData:ByteHeader];
     //[line3 appendData:data];
-    //Byte* p = (Byte*)data.bytes;
-    //int nalType = (p[0] & 0x1f);
+    
+    // Ignoring SEI?
+    // If the NAL unit has no timing properties of its own (e.g., parameter set and SEI NAL units), the RTP timestamp is set to the RTP timestamp of the primary coded picture
+    Byte* p = (Byte*)data.bytes;
+    int nalType = (p[0] & 0x1f);
+    //if(nalType == 6){
+    //    return;
+    //}
+    //NSLog(@"inmem HAL data: nalType=%i", nalType);
     //NSLog(@"inmem HAL data: nalType=%i, %@", nalType, data);
     [self.liveVideoH264Buffer writeData:data];//line3];
+    if(nalType != 6 && [self.delegate vision:self frameWithPts:pts andVideo:self.liveVideoH264Buffer andAudio:self.liveAudioAACBuffer withSps:self.liveVideoSps withPps:self.liveVideoPps]){
+        [self inmemResetEncoders:NO];
+    }
 }
 
 - (void)inmemEncodedAudioData:(NSData*)data
 {
     [self.liveAudioAACBuffer writeData:data];
+}
+
+- (void)inmemOnBeforeIframe:(double)pts
+{
+    self.liveIFrameReceived++;
+    // NSLog(@"inmem flushing frame");
+    //if([self.delegate vision:self frameWithPts:self.liveVideoPts andVideo:self.liveVideoH264Buffer andAudio:self.liveAudioAACBuffer withSps:self.liveVideoSps withPps:self.liveVideoPps]){
+    //    [self inmemResetEncoders:NO];
+    //    self.liveVideoPts = pts;
+    //}
 }
 
 - (void)inmemResetEncoders:(BOOL)totally
@@ -2830,13 +2854,6 @@ typedef void (^PBJVisionBlock)();
     if(totally){
         self.liveVideoSps = nil;
         self.liveVideoPps = nil;
-    }
-}
-
-- (void)inmemOnIFrame
-{
-    if([self.delegate vision:self canFlushInmemVideo:self.liveVideoH264Buffer andAudio:self.liveAudioAACBuffer withSps:self.liveVideoSps withPps:self.liveVideoPps]){
-        [self inmemResetEncoders:NO];
     }
 }
 
