@@ -2785,9 +2785,9 @@ typedef void (^PBJVisionBlock)();
 
 - (void)inmemSpsPps:(NSData*)sps pps:(NSData*)pps
 {
-    const char bytes[] = "\x00\x00\x00\x01";
-    size_t length = (sizeof bytes) - 1;//string literals have implicit trailing '\0'
-    NSData *ByteHeader = [NSData dataWithBytes:bytes length:length];
+    const char nalHeadrBytes[] = "\x00\x00\x00\x01";
+    size_t length = (sizeof nalHeadrBytes) - 1;//string literals have implicit trailing '\0'
+    NSData *ByteHeader = [NSData dataWithBytes:nalHeadrBytes length:length];
     NSMutableData *line1 = [NSMutableData data];
     [line1 appendData:ByteHeader];
     [line1 appendData:sps];
@@ -2803,13 +2803,15 @@ typedef void (^PBJVisionBlock)();
 
 - (void)inmemEncodedVideoData:(NSData*)data isKeyFrame:(BOOL)isKeyFrame
 {
-    const char bytes[] = "\x00\x00\x00\x01";
-    size_t length = (sizeof bytes) - 1;//string literals have implicit trailing '\0'
-    NSData *ByteHeader = [NSData dataWithBytes:bytes length:length];
+    const char nalHeadrBytes[] = "\x00\x00\x00\x01";
+    size_t length = (sizeof nalHeadrBytes) - 1;//string literals have implicit trailing '\0'
+    NSData *ByteHeader = [NSData dataWithBytes:nalHeadrBytes length:length];
     NSMutableData *line3 = [NSMutableData data];
     [line3 appendData:ByteHeader];
     [line3 appendData:data];
-    //NSLog(@"inmem HAL data: %@", data);
+    //Byte* p = (Byte*)data.bytes;
+    //int nalType = (p[0] & 0x1f);
+    //NSLog(@"inmem HAL data: nalType=%i, %@", nalType, data);
     [self.liveVideoH264Buffer writeData:line3];
 }
 
