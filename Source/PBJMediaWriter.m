@@ -187,7 +187,7 @@
 - (BOOL)setupAudioWithSettings:(NSDictionary *)audioSettings
 {
     if(inmemEncoding == PBJInmemEncodingExclusive){
-        h264enc.audioSettings = audioSettings;
+        h264enc.audioSettingsMic = audioSettings;
         [h264enc setupEncoding];
         return YES;
     }
@@ -221,7 +221,7 @@
 - (BOOL)setupVideoWithSettings:(NSDictionary *)videoSettings
 {
     if(inmemEncoding == PBJInmemEncodingExclusive){
-        h264enc.videoSettings = videoSettings;
+        h264enc.videoSettingsOut = videoSettings;
         [h264enc setupEncoding];
         return YES;
     }
@@ -259,6 +259,13 @@
     return self.isVideoReady;
 }
 
+- (NSDictionary*)videoEncodingSettings {
+    return h264enc.videoSettingsOut;
+}
+- (AudioStreamBasicDescription)audioEncodingSettings {
+    return h264enc.audioSettingsOut;
+}
+
 - (void) muteAudioVideoInBuffer:(CMSampleBufferRef)sampleBuffer
 {
     CVImageBufferRef imageBuffer = CMSampleBufferGetImageBuffer(sampleBuffer);
@@ -266,7 +273,7 @@
         //http://10.0.1.14:7000/index.m3u8
         //videoSettings = @{ (id)kCVPixelBufferPixelFormatTypeKey : @(kCVPixelFormatType_420YpCbCr8BiPlanarFullRange) };
         //videoSettings = @{ (id)kCVPixelBufferPixelFormatTypeKey : @(kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange) };
-        int planes = CVPixelBufferGetPlaneCount(imageBuffer);
+        int planes = (int)CVPixelBufferGetPlaneCount(imageBuffer);
         if(planes > 0){
             // http://stackoverflow.com/questions/4085474/how-to-get-the-y-component-from-cmsamplebuffer-resulted-from-the-avcapturesessio
             OSType pixelFormat = CVPixelBufferGetPixelFormatType(imageBuffer);

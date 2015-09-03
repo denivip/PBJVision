@@ -2822,24 +2822,22 @@ typedef void (^PBJVisionBlock)();
     //NSLog(@"inmem HAL data: nalType=%i", nalType);
     //NSLog(@"inmem HAL data: nalType=%i, %@", nalType, data);
     [self.liveVideoH264Buffer writeData:data];//line3];
-    if(nalType != 6 && [self.delegate vision:self frameWithPts:pts andVideo:self.liveVideoH264Buffer andAudio:self.liveAudioAACBuffer withSps:self.liveVideoSps withPps:self.liveVideoPps]){
-        [self inmemResetEncoders:NO];
+    if(nalType != 6 && [self.delegate vision:self frameWithPts:pts andVideo:self.liveVideoH264Buffer withSps:self.liveVideoSps withPps:self.liveVideoPps]){
+        [self.liveVideoH264Buffer removeAll];
     }
 }
 
-- (void)inmemEncodedAudioData:(NSData*)data
+- (void)inmemEncodedAudioData:(NSData*)data withPts:(double)pts
 {
     [self.liveAudioAACBuffer writeData:data];
+    if([self.delegate vision:self frameWithPts:pts andAudio:self.liveAudioAACBuffer]){
+        [self.liveAudioAACBuffer removeAll];
+    }
 }
 
 - (void)inmemOnBeforeIframe:(double)pts
 {
     self.liveIFrameReceived++;
-    // NSLog(@"inmem flushing frame");
-    //if([self.delegate vision:self frameWithPts:self.liveVideoPts andVideo:self.liveVideoH264Buffer andAudio:self.liveAudioAACBuffer withSps:self.liveVideoSps withPps:self.liveVideoPps]){
-    //    [self inmemResetEncoders:NO];
-    //    self.liveVideoPts = pts;
-    //}
 }
 
 - (void)inmemResetEncoders:(BOOL)totally
@@ -2855,6 +2853,14 @@ typedef void (^PBJVisionBlock)();
         self.liveVideoSps = nil;
         self.liveVideoPps = nil;
     }
+}
+
+- (NSDictionary*)videoEncodingSettings {
+    return [_mediaWriter videoEncodingSettings];
+}
+
+- (AudioStreamBasicDescription)audioEncodingSettings {
+    return [_mediaWriter audioEncodingSettings];
 }
 
 #pragma mark - sample buffer processing

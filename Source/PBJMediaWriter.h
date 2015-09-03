@@ -61,6 +61,8 @@ typedef NS_ENUM(NSInteger, PBJInmemEncoding) {
 - (NSURL*)getOutputURL;
 - (void)setDelegate:(id<PBJMediaWriterDelegate,H264HwEncoderImplDelegate>)delegate;
 - (void)finalize;
+- (NSDictionary*)videoEncodingSettings;
+- (AudioStreamBasicDescription)audioEncodingSettings;
 @end
 
 @protocol PBJMediaWriterDelegate <NSObject>
